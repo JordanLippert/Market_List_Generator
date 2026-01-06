@@ -1,70 +1,70 @@
 # Market List Generator
 
-Gerador de Lista de Compras com envio automático para WhatsApp!
+Gerador de Lista de Compras com envio automÃ¡tico para WhatsApp!
 
-## Descrição
+## DescriÃ§Ã£o
 
-Este é um projeto de automação pessoal desenvolvido em **C# e .NET 10** que permite criar rapidamente uma lista de compras através de uma interface web moderna e enviá-la formatada diretamente para o WhatsApp.
+Este Ã© um projeto de automaÃ§Ã£o pessoal desenvolvido em **C# e .NET 10** que permite criar rapidamente uma lista de compras atravÃ©s de uma interface web moderna e enviÃ¡-la formatada diretamente para o WhatsApp.
 
 ## Funcionalidades
 
 - Interface web responsiva e moderna
-- Seleção rápida de itens por categoria
-- Organização automática por categorias (Grãos, Laticínios, Carnes, Hortifruti, etc.)
-- Geração automática de link do WhatsApp
+- SeleÃ§Ã£o rÃ¡pida de itens por categoria
+- OrganizaÃ§Ã£o automÃ¡tica por categorias (GrÃ£os, LaticÃ­nios, Carnes, Hortifruti, etc.)
+- GeraÃ§Ã£o automÃ¡tica de link do WhatsApp
 - Mensagem formatada com emojis
-- Botões para selecionar/limpar todos os itens
+- BotÃµes para selecionar/limpar todos os itens
 - Contador de itens selecionados
 
 ## Como Executar
 
-### Pré-requisitos
+### PrÃ©-requisitos
 - .NET 10 SDK instalado
 
 ### Executar o Projeto
 
-#### Opção 1: Via Script Batch (Windows)
+#### OpÃ§Ã£o 1: Via Script Batch (Windows)
 ```bash
 start.bat
 ```
 
-#### Opção 2: Via Terminal
+#### OpÃ§Ã£o 2: Via Terminal
 ```bash
 cd Market_List_Generator
 dotnet run
 ```
 
-#### Opção 3: Via Visual Studio
+#### OpÃ§Ã£o 3: Via Visual Studio
 1. Abra o projeto no Visual Studio
 2. Pressione **F5** ou clique em **Run**
-3. O navegador abrirá automaticamente
+3. O navegador abrirÃ¡ automaticamente
 
-### Acessar a Aplicação
+### Acessar a AplicaÃ§Ã£o
 
-Após executar, acesse no navegador:
+ApÃ³s executar, acesse no navegador:
 - **HTTPS**: https://localhost:51773
 - **HTTP**: http://localhost:51774
 
 ## Como Usar
 
-1. **Selecione os itens** que deseja comprar clicando nas caixas de seleção
+1. **Selecione os itens** que deseja comprar clicando nas caixas de seleÃ§Ã£o
 2. Veja o **contador** de itens selecionados na parte inferior
-3. Use os botões:
+3. Use os botÃµes:
    - **Selecionar Todos**: Marca todos os itens
-   - **Limpar Seleção**: Desmarca todos os itens
+   - **Limpar SeleÃ§Ã£o**: Desmarca todos os itens
    - **Enviar para WhatsApp**: Abre o WhatsApp com a mensagem formatada
-4. O WhatsApp Web/Desktop abrirá automaticamente com a mensagem pronta
-5. Envie para você mesmo ou para outra pessoa!
+4. O WhatsApp Web/Desktop abrirÃ¡ automaticamente com a mensagem pronta
+5. Envie para vocÃª mesmo ou para outra pessoa!
 
-## Categorias Disponíveis
+## Categorias DisponÃ­veis
 
-- **Grãos e Panificados** - Arroz, Macarrão, Pão, Farinha, etc.
-- **Laticínios e Ovos** - Leite, Queijo, Iogurte, Ovos, etc.
+- **GrÃ£os e Panificados** - Arroz, MacarrÃ£o, PÃ£o, Farinha, etc.
+- **LaticÃ­nios e Ovos** - Leite, Queijo, Iogurte, Ovos, etc.
 - **Carnes** - Frango, Carne bovina, Embutidos, etc.
 - **Hortifruti** - Frutas, Verduras, Legumes
-- **Condimentos e Temperos** - Sal, Açúcar, Molhos, Temperos
-- **Bebidas e Lanches** - Café, Sucos, Refrigerantes, etc.
-- **Limpeza** - Produtos de limpeza doméstica
+- **Condimentos e Temperos** - Sal, AÃ§Ãºcar, Molhos, Temperos
+- **Bebidas e Lanches** - CafÃ©, Sucos, Refrigerantes, etc.
+- **Limpeza** - Produtos de limpeza domÃ©stica
 - **Higiene Pessoal** - Sabonete, Shampoo, Desodorante, etc.
 
 ## Arquitetura
@@ -73,47 +73,47 @@ O projeto segue uma arquitetura limpa em camadas:
 
 ```
 Market_List_Generator/
-?
-??? src/
-?   ??? Domain/                    # Camada de Domínio
-?   ?   ??? Entities/              # Entidades do domínio
-?   ?   ?   ??? Item.cs
-?   ?   ??? Enums/                 # Enumerações
-?   ?   ?   ??? CategoryType.cs
-?   ?   ??? Interfaces/            # Contratos
-?   ?       ??? IItemRepository.cs
-?   ?
-?   ??? Application/               # Camada de Aplicação
-?   ?   ??? Services/              # Lógica de negócio
-?   ?       ??? MarketListService.cs
-?   ?
-?   ??? Infrastructure/            # Camada de Infraestrutura
-?       ??? Repositories/          # Implementações de repositórios
-?           ??? ItemRepository.cs
-?
-??? Controllers/                   # Controllers MVC
-?   ??? HomeController.cs
-?
-??? Views/                         # Views Razor
-?   ??? Shared/
-?   ?   ??? _Layout.cshtml
-?   ??? Home/
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ Domain/                    # Camada de DomÃ­nio
+â”‚   â”‚   â”œâ”€â”€ Entities/              # Entidades do domÃ­nio
+â”‚   â”‚   â”‚   â””â”€â”€ Item.cs
+â”‚   â”‚   â”œâ”€â”€ Enums/                 # EnumeraÃ§Ãµes
+â”‚   â”‚   â”‚   â””â”€â”€ CategoryType.cs
+â”‚   â”‚   â””â”€â”€ Interfaces/            # Contratos
+â”‚   â”‚       â””â”€â”€ IItemRepository.cs
+â”‚   â”‚
+â”‚   â”œâ”€â”€ Application/               # Camada de AplicaÃ§Ã£o
+â”‚   â”‚   â””â”€â”€ Services/              # LÃ³gica de negÃ³cio
+â”‚   â”‚       â””â”€â”€ MarketListService.cs
+â”‚   â”‚
+â”‚   â””â”€â”€ Infrastructure/            # Camada de Infraestrutura
+â”‚       â””â”€â”€ Repositories/          # ImplementaÃ§Ãµes de repositÃ³rios
+â”‚           â””â”€â”€ ItemRepository.cs
+â”‚
+â”œâ”€â”€ Presentation/                  # Camada de ApresentaÃ§Ã£o
+â”‚   â””â”€â”€ WebApp/
+â”‚       â”œâ”€â”€ Controllers/           # Controllers MVC
+â”‚       â”‚   â””â”€â”€ HomeController.cs
+â”‚       â”œâ”€â”€ Views/                 # Views Razor
+â”‚       â”‚   â”œâ”€â”€ Shared/
+â”‚       â”‚   â”‚   â””â”€â”€ _Layout.cshtml
+â”‚       â”‚   â””â”€â”€ Home/
 ?   ?   ??? Index.cshtml
 ?   ??? _ViewStart.cshtml
 ?
-??? wwwroot/                       # Arquivos estáticos
+??? wwwroot/                       # Arquivos estï¿½ticos
 ?   ??? css/
 ?   ?   ??? site.css
 ?   ??? js/
 ?       ??? site.js
 ?
-??? Properties/                    # Configurações do projeto
+??? Properties/                    # Configuraï¿½ï¿½es do projeto
 ?   ??? launchSettings.json
 ?
-??? Program.cs                     # Ponto de entrada da aplicação
-??? appsettings.json              # Configurações gerais
+??? Program.cs                     # Ponto de entrada da aplicaï¿½ï¿½o
+??? appsettings.json              # Configuraï¿½ï¿½es gerais
 ??? Market_List_Generator.csproj  # Arquivo do projeto
-??? start.bat                     # Script de inicialização
+??? start.bat                     # Script de inicializaï¿½ï¿½o
 ??? README.md                     # Este arquivo
 ```
 
@@ -131,19 +131,19 @@ Market_List_Generator/
 ```
 *LISTA DE COMPRAS*
 
-*Grãos e Panificados*
+*Grï¿½os e Panificados*
   - Arroz
-  - Macarrão
-  - Pão
+  - Macarrï¿½o
+  - Pï¿½o
 
-*Laticínios e Ovos*
+*Laticï¿½nios e Ovos*
   - Leite
   - Ovos
   - Queijo
 
 *Carnes*
-  - Filé de peito
-  - Carne moída
+  - Filï¿½ de peito
+  - Carne moï¿½da
 
 *Hortifruti*
   - Alface
@@ -151,7 +151,7 @@ Market_List_Generator/
   - Batata
 ```
 
-## Personalização
+## Personalizaï¿½ï¿½o
 
 ### Adicionar Novos Itens
 
@@ -164,8 +164,8 @@ new(ID, "Nome do Item", CategoryType.Categoria),
 ### Adicionar Novas Categorias
 
 1. Adicione a categoria em: `src/Domain/Enums/CategoryType.cs`
-2. Adicione os itens no repositório
-3. Atualize os ícones e nomes de exibição em: `Controllers/HomeController.cs`
+2. Adicione os itens no repositï¿½rio
+3. Atualize os ï¿½cones e nomes de exibiï¿½ï¿½o em: `Controllers/HomeController.cs`
 
 ### Personalizar Estilo
 
@@ -173,25 +173,25 @@ Edite os arquivos:
 - CSS: `wwwroot/css/site.css`
 - JavaScript: `wwwroot/js/site.js`
 
-## Estrutura de Código
+## Estrutura de Cï¿½digo
 
-### Camada de Domínio
-Contém as entidades principais e regras de negócio fundamentais.
+### Camada de Domï¿½nio
+Contï¿½m as entidades principais e regras de negï¿½cio fundamentais.
 
-### Camada de Aplicação
-Contém os serviços que orquestram a lógica de negócio.
+### Camada de Aplicaï¿½ï¿½o
+Contï¿½m os serviï¿½os que orquestram a lï¿½gica de negï¿½cio.
 
 ### Camada de Infraestrutura
-Contém implementações concretas e acesso a dados.
+Contï¿½m implementaï¿½ï¿½es concretas e acesso a dados.
 
-### Camada de Apresentação
+### Camada de Apresentaï¿½ï¿½o
 Controllers e Views para a interface web.
 
-## Licença
+## Licenï¿½a
 
-Projeto pessoal de automação.
+Projeto pessoal de automaï¿½ï¿½o.
 
 ## Autor
 
 Jordan Lippert  
-Desenvolvido para facilitar a criação de listas de compras e integração com WhatsApp.
+Desenvolvido para facilitar a criaï¿½ï¿½o de listas de compras e integraï¿½ï¿½o com WhatsApp.
