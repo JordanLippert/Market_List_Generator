@@ -13,7 +13,13 @@ RUN dotnet publish -c Release -o out
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
+
+# Copy published app
 COPY --from=build /app/out .
+
+# Copy Views and wwwroot
+COPY --from=build /app/Presentation/WebApp/Views ./Presentation/WebApp/Views
+COPY --from=build /app/Presentation/WebApp/wwwroot ./Presentation/WebApp/wwwroot
 
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:10000

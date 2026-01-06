@@ -4,7 +4,13 @@ using Market_List_Generator.src.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews()
+    .AddRazorOptions(options =>
+    {
+        options.ViewLocationFormats.Add("/Presentation/WebApp/Views/{1}/{0}.cshtml");
+        options.ViewLocationFormats.Add("/Presentation/WebApp/Views/Shared/{0}.cshtml");
+    });
+
 builder.Services.AddSingleton<IItemRepository, ItemRepository>();
 builder.Services.AddSingleton<MarketListService>();
 
