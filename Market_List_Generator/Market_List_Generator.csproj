@@ -12,4 +12,11 @@
     <Folder Include="src\Infrastructure\Encoding\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Presentation\WebApp\wwwroot\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
