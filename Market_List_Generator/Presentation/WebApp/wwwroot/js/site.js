@@ -33,15 +33,16 @@ async function sendToWhatsApp() {
     });
     const data = await res.json();
     if (data && data.url) {
-      const { target, fallback, isMobile } = resolveWhatsAppUrl(data.url);
+      const { target, fallback, isMobile, isIOS } = resolveWhatsAppUrl(data.url);
 
       if (isMobile) {
-        // Same-tab navigation avoids popup blockers on mobile browsers
+        // Navegação no mesmo tab ajuda a evitar bloqueios de pop-up
         window.location.href = target;
-        // If the app is not installed, fall back to the web URL
+        // iOS às vezes precisa de um tempo maior para detectar o app ausente
+        const wait = isIOS ? 1500 : 900;
         setTimeout(() => {
           if (document.visibilityState === 'visible') window.location.href = fallback;
-        }, 800);
+        }, wait);
       } else {
         const opened = window.open(target, '_blank');
         if (!opened) window.location.href = fallback;
@@ -54,14 +55,17 @@ async function sendToWhatsApp() {
 updateCount();
 
 function resolveWhatsAppUrl(baseUrl) {
-  const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent);
-  const deepLink = baseUrl.startsWith('https://api.whatsapp.com')
-    ? baseUrl.replace('https://api.whatsapp.com', 'whatsapp')
-    : baseUrl;
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const isMobile = isIOS || isAndroid;
 
-  return {
-    isMobile,
-    target: isMobile ? deepLink : baseUrl,
-    fallback: baseUrl
-  };
+  // extrai o parâmetro text=... para montar deep link correto
+  const match = baseUrl.match(/[?&]text=([^&]+)/);
+  const text = match ? match[1] : '';
+
+  const deepLink = `whatsapp://send?text=${text}`;
+  const fallback = `https://wa.me/?text=${text}`; // fallback universal
+
+  return { isMobile, isIOS, target: isMobile ? deepLink : fallback, fallback };
 }
