@@ -1,6 +1,10 @@
 using Market_List_Generator.src.Application.Services;
 using Market_List_Generator.src.Domain.Interfaces;
 using Market_List_Generator.src.Infrastructure.Repositories;
+using System.Text;
+
+// Set UTF-8 encoding
+Console.OutputEncoding = Encoding.UTF8;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,8 +26,9 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// Configure static files to serve from wwwroot
 app.UseStaticFiles();
+
 app.UseRouting();
 
 app.MapControllerRoute(

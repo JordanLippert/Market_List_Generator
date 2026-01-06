@@ -17,8 +17,9 @@ WORKDIR /app
 # Copy published app
 COPY --from=build /app/out .
 
-# Copy Views
+# Copy Views and wwwroot to correct locations
 COPY --from=build /app/Presentation/WebApp/Views ./Presentation/WebApp/Views
+COPY --from=build /app/Presentation/WebApp/wwwroot ./wwwroot
 
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:10000
