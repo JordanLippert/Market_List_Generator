@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: Market_List_Generator
+    runtime: dotnet
+    runtimeVersion: 8
+    buildCommand: dotnet publish -c Release -o out
+    startCommand: cd out && dotnet Market_List_Generator.dll
+    envVars:
+      - key: ASPNETCORE_URLS
+        value: http://0.0.0.0:10000
