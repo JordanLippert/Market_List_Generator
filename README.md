@@ -4,7 +4,7 @@ Gerador de Lista de Compras com envio automático para WhatsApp!
 
 ## Descrição
 
-Este é um projeto de automação pessoal desenvolvido em **C# e .NET 10** que permite criar rapidamente uma lista de compras através de uma interface web moderna e enviá-la formatada diretamente para o WhatsApp.
+Este é um projeto de automação pessoal desenvolvido em **C# e .NET** que permite criar rapidamente uma lista de compras através de uma interface web moderna e enviá-la formatada diretamente para o WhatsApp.
 
 ## Funcionalidades
 
@@ -19,22 +19,26 @@ Este é um projeto de automação pessoal desenvolvido em **C# e .NET 10** que p
 ## Como Executar
 
 ### Pré-requisitos
-- .NET 10 SDK instalado
+
+- SDK do .NET instalado (versão 8.0 ou superior recomendada)
 
 ### Executar o Projeto
 
 #### Opção 1: Via Script Batch (Windows)
+
 ```bash
 start.bat
 ```
 
 #### Opção 2: Via Terminal
+
 ```bash
 cd Market_List_Generator
 dotnet run
 ```
 
 #### Opção 3: Via Visual Studio
+
 1. Abra o projeto no Visual Studio
 2. Pressione **F5** ou clique em **Run**
 3. O navegador abrirá automaticamente
@@ -42,6 +46,7 @@ dotnet run
 ### Acessar a Aplicação
 
 Após executar, acesse no navegador:
+
 - **HTTPS**: https://localhost:51773
 - **HTTP**: http://localhost:51774
 
@@ -98,29 +103,28 @@ Market_List_Generator/
 │       │   ├── Shared/
 │       │   │   └── _Layout.cshtml
 │       │   └── Home/
-?   ?   ??? Index.cshtml
-?   ??? _ViewStart.cshtml
-?
-??? wwwroot/                       # Arquivos est�ticos
-?   ??? css/
-?   ?   ??? site.css
-?   ??? js/
-?       ??? site.js
-?
-??? Properties/                    # Configura��es do projeto
-?   ??? launchSettings.json
-?
-??? Program.cs                     # Ponto de entrada da aplica��o
-??? appsettings.json              # Configura��es gerais
-??? Market_List_Generator.csproj  # Arquivo do projeto
-??? start.bat                     # Script de inicializa��o
-??? README.md                     # Este arquivo
+│       │       └── Index.cshtml
+│       ├── _ViewStart.cshtml
+│       └── wwwroot/               # Arquivos estáticos
+│           ├── css/
+│           │   └── site.css
+│           └── js/
+│               └── site.js
+│
+├── Properties/                    # Configurações do projeto
+│   └── launchSettings.json
+│
+├── Program.cs                     # Ponto de entrada da aplicação
+├── appsettings.json              # Configurações gerais
+├── Market_List_Generator.csproj  # Arquivo do projeto
+├── start.bat                     # Script de inicialização
+└── README.md                     # Este arquivo
 ```
 
 ## Tecnologias Utilizadas
 
-- **C# 14.0**
-- **.NET 10**
+- **C#**
+- **.NET**
 - **ASP.NET Core MVC**
 - **Razor Pages**
 - **HTML5/CSS3**
@@ -131,19 +135,19 @@ Market_List_Generator/
 ```
 *LISTA DE COMPRAS*
 
-*Gr�os e Panificados*
+*Grãos e Panificados*
   - Arroz
-  - Macarr�o
-  - P�o
+  - Macarrão
+  - Pão
 
-*Latic�nios e Ovos*
+*Laticínios e Ovos*
   - Leite
   - Ovos
   - Queijo
 
 *Carnes*
-  - Fil� de peito
-  - Carne mo�da
+  - Filé de peito
+  - Carne moída
 
 *Hortifruti*
   - Alface
@@ -151,21 +155,21 @@ Market_List_Generator/
   - Batata
 ```
 
-## Personaliza��o
+## Personalização
 
 ### Adicionar Novos Itens
 
 Edite o arquivo: `src/Infrastructure/Repositories/ItemRepository.cs`
 
 ```csharp
-new(ID, "Nome do Item", CategoryType.Categoria),
+new Item(ID, "Nome do Item", CategoryType.Categoria),
 ```
 
 ### Adicionar Novas Categorias
 
 1. Adicione a categoria em: `src/Domain/Enums/CategoryType.cs`
-2. Adicione os itens no reposit�rio
-3. Atualize os �cones e nomes de exibi��o em: `Controllers/HomeController.cs`
+2. Adicione os itens no repositório
+3. Atualize os ícones e nomes de exibição em: `Controllers/HomeController.cs`
 
 ### Personalizar Estilo
 
@@ -173,25 +177,25 @@ Edite os arquivos:
 - CSS: `wwwroot/css/site.css`
 - JavaScript: `wwwroot/js/site.js`
 
-## Estrutura de C�digo
+## Estrutura de Código
 
-### Camada de Dom�nio
-Cont�m as entidades principais e regras de neg�cio fundamentais.
+### Camada de Domínio
+Contém as entidades principais e regras de negócio fundamentais.
 
-### Camada de Aplica��o
-Cont�m os servi�os que orquestram a l�gica de neg�cio.
+### Camada de Aplicação
+Contém os serviços que orquestram a lógica de negócio.
 
 ### Camada de Infraestrutura
-Cont�m implementa��es concretas e acesso a dados.
+Contém implementações concretas e acesso a dados.
 
-### Camada de Apresenta��o
+### Camada de Apresentação
 Controllers e Views para a interface web.
 
-## Licen�a
+## Licença
 
-Projeto pessoal de automa��o.
+Projeto pessoal de automação.
 
 ## Autor
 
 Jordan Lippert  
-Desenvolvido para facilitar a cria��o de listas de compras e integra��o com WhatsApp.
+Desenvolvido para facilitar a criação de listas de compras e integração com WhatsApp.
