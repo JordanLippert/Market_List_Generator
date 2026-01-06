@@ -60,8 +60,8 @@ public class HomeController : Controller
     {
         return category switch
         {
-            src.Domain.Enums.CategoryType.GrainsAndBakery => "Grãos e Panificados",
-            src.Domain.Enums.CategoryType.DairyAndEggs => "Laticínios e Ovos",
+            src.Domain.Enums.CategoryType.GrainsAndBakery => "GrÃ£os e Panificados",
+            src.Domain.Enums.CategoryType.DairyAndEggs => "LaticÃ­nios e Ovos",
             src.Domain.Enums.CategoryType.Meats => "Carnes",
             src.Domain.Enums.CategoryType.Produce => "Hortifruti",
             src.Domain.Enums.CategoryType.CondimentsAndSpices => "Condimentos e Temperos",
