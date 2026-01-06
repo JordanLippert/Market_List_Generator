@@ -12,12 +12,16 @@
     <Folder Include="src\Infrastructure\Encoding\" />
   </ItemGroup>
 
+  <!-- Copiar wwwroot do caminho de apresentação para a raiz do publish -->
   <ItemGroup>
-    <Content Include="Presentation\WebApp\wwwroot\**\*">
-      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
+    <StaticFiles Include="Presentation/WebApp/wwwroot/**/*" />
   </ItemGroup>
+
+  <Target Name="CopyStaticToPublish" AfterTargets="Publish">
+    <MakeDir Directories="$(PublishDir)wwwroot" />
+    <Copy SourceFiles="@(StaticFiles)"
+          DestinationFiles="@(StaticFiles->'$(PublishDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
