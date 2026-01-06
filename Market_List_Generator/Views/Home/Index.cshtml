@@ -1,0 +1,76 @@
+@using Market_List_Generator.src.Domain.Entities
+@using Market_List_Generator.src.Domain.Enums
+@model IDictionary<CategoryType, List<Item>>
+
+@{
+    ViewData["Title"] = "Gerador de Lista de Compras";
+}
+
+<div class="container">
+    <div class="header">
+        <h1>Gerador de Lista de Compras</h1>
+        <p>Selecione os itens e envie direto para o WhatsApp!</p>
+    </div>
+
+    <div class="content">
+        <div class="categories">
+            @foreach (var category in Model.OrderBy(c => c.Key))
+            {
+                var categoryIcon = category.Key switch
+                {
+                    CategoryType.GrainsAndBakery => "\U0001F33E",
+                    CategoryType.DairyAndEggs => "\U0001F95B",
+                    CategoryType.Meats => "\U0001F969",
+                    CategoryType.Produce => "\U0001F96C",
+                    CategoryType.CondimentsAndSpices => "\U0001F9C2",
+                    CategoryType.BeveragesAndSnacks => "\u2615",
+                    CategoryType.Cleaning => "\U0001F9F9",
+                    CategoryType.PersonalHygiene => "\U0001F9FC",
+                    _ => "\U0001F4E6"
+                };
+
+                var categoryName = category.Key switch
+                {
+                    CategoryType.GrainsAndBakery => "Grãos e Panificados",
+                    CategoryType.DairyAndEggs => "Laticínios e Ovos",
+                    CategoryType.Meats => "Carnes",
+                    CategoryType.Produce => "Hortifruti",
+                    CategoryType.CondimentsAndSpices => "Condimentos e Temperos",
+                    CategoryType.BeveragesAndSnacks => "Bebidas e Lanches",
+                    CategoryType.Cleaning => "Limpeza",
+                    CategoryType.PersonalHygiene => "Higiene Pessoal",
+                    _ => category.Key.ToString()
+                };
+
+                <div class="category-card">
+                    <div class="category-header">
+                        <span class="category-icon">@categoryIcon</span>
+                        <span class="category-title">@categoryName</span>
+                    </div>
+                    <ul class="items-list">
+                        @foreach (var item in category.Value.OrderBy(i => i.Name))
+                        {
+                            <li class="item-checkbox">
+                                <input type="checkbox" id="item-@item.Id" value="@item.Id" class="item-select" />
+                                <label for="item-@item.Id">@item.Name</label>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+
+        <div class="action-bar">
+            <div class="selected-count">
+                <span id="count">0</span> itens selecionados
+            </div>
+            <div class="button-group">
+                <button class="btn-select-all" onclick="selectAll()">Selecionar Todos</button>
+                <button class="btn-clear" onclick="clearAll()">Limpar Seleção</button>
+                <button class="btn-whatsapp" id="whatsappBtn" onclick="sendToWhatsApp()" disabled>
+                    Enviar para WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
