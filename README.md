@@ -2,6 +2,11 @@
 
 Gerador de Lista de Compras com envio automático para WhatsApp!
 
+## Site em funcionamento
+
+- URL: https://market-list-generator.onrender.com/
+- Observação: se aparecer uma tela preta do Render ao acessar, aguarde cerca de 5–10 segundos para o serviço ativar o site (cold start).
+
 ## Descrição
 
 Este é um projeto de automação pessoal desenvolvido em **C# e .NET** que permite criar rapidamente uma lista de compras através de uma interface web moderna e enviá-la formatada diretamente para o WhatsApp.
