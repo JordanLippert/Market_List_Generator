@@ -175,6 +175,10 @@ public class ItemRepository : IItemRepository
         new(166, "Pano de chão", CategoryType.Cleaning),
         new(167, "Vassoura", CategoryType.Cleaning),
         new(168, "Rodo", CategoryType.Cleaning),
+        // Itens de cozinha para preparo/armazenamento
+        new(169, "Papel filme", CategoryType.Cleaning),
+        new(190, "Papel manteiga", CategoryType.Cleaning),
+        new(191, "Papel alumínio", CategoryType.Cleaning),
 
         // =========================
         // PersonalHygiene
