@@ -12,6 +12,18 @@
     <Folder Include="src\Infrastructure\Encoding\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.TypeScript.MSBuild" Version="5.4.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TypeScriptCompileBlocked>false</TypeScriptCompileBlocked>
+    <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
+  </PropertyGroup>
+
   <!-- Copiar wwwroot do caminho de apresentação para a raiz do publish -->
   <ItemGroup>
     <StaticFiles Include="Presentation/WebApp/wwwroot/**/*" />

@@ -6,7 +6,11 @@ using System.Text;
 // Set UTF-8 encoding
 Console.OutputEncoding = Encoding.UTF8;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    WebRootPath = "Presentation/WebApp/wwwroot"
+});
 
 builder.Services.AddControllersWithViews()
     .AddRazorOptions(options =>

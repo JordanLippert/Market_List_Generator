@@ -60,14 +60,20 @@ public class HomeController : Controller
     {
         return category switch
         {
-            src.Domain.Enums.CategoryType.GrainsAndBakery => "Grãos e Panificados",
+            src.Domain.Enums.CategoryType.Grains => "Grãos e Farinhas",
+            src.Domain.Enums.CategoryType.Bakery => "Padaria e Massas",
             src.Domain.Enums.CategoryType.DairyAndEggs => "Laticínios e Ovos",
-            src.Domain.Enums.CategoryType.Meats => "Carnes",
+            src.Domain.Enums.CategoryType.Meats => "Carnes e Frios",
             src.Domain.Enums.CategoryType.Produce => "Hortifruti",
             src.Domain.Enums.CategoryType.CondimentsAndSpices => "Condimentos e Temperos",
-            src.Domain.Enums.CategoryType.BeveragesAndSnacks => "Bebidas e Lanches",
+            src.Domain.Enums.CategoryType.Beverages => "Bebidas",
+            src.Domain.Enums.CategoryType.Snacks => "Doces e Lanches",
+            src.Domain.Enums.CategoryType.Frozen => "Congelados",
+            src.Domain.Enums.CategoryType.Alcoholic => "Bebidas Alcoólicas",
             src.Domain.Enums.CategoryType.Cleaning => "Limpeza",
             src.Domain.Enums.CategoryType.PersonalHygiene => "Higiene Pessoal",
+            src.Domain.Enums.CategoryType.Pets => "Pet Shop",
+            src.Domain.Enums.CategoryType.Utilities => "Utilidades e Bazar",
             _ => category.ToString()
         };
     }

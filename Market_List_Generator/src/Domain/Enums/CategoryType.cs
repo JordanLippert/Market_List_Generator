@@ -1,14 +1,20 @@
-﻿namespace Market_List_Generator.src.Domain.Enums
+namespace Market_List_Generator.src.Domain.Enums
 {
     public enum CategoryType
     {
-        GrainsAndBakery,
+        Grains,
+        Bakery,
         DairyAndEggs,
         Meats,
         Produce,
         CondimentsAndSpices,
-        BeveragesAndSnacks,
+        Beverages,
+        Snacks,
+        Frozen,
+        Alcoholic,
         Cleaning,
-        PersonalHygiene
+        PersonalHygiene,
+        Pets,
+        Utilities
     }
 }

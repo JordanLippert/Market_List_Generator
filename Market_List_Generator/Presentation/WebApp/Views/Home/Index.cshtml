@@ -3,74 +3,84 @@
 @model IDictionary<CategoryType, List<Item>>
 
 @{
-    ViewData["Title"] = "Gerador de Lista de Compras";
+    ViewData["Title"] = "Lista";
+    var totalItems = Model.Sum(c => c.Value.Count);
+    var today = DateTime.Now.ToString("dd.MM");
+    var weekday = System.Globalization.CultureInfo.GetCultureInfo("pt-BR").DateTimeFormat.GetDayName(DateTime.Now.DayOfWeek).ToUpperInvariant();
 }
 
-<div class="container">
-    <div class="header">
-        <h1>Gerador de Lista de Compras</h1>
-        <p>Selecione os itens e envie direto para o WhatsApp!</p>
+<main class="page">
+    <header class="masthead">
+        <div class="masthead-row">
+            <h1 class="wordmark">Lista.</h1>
+            <div class="datestamp">
+                <span class="datestamp-date">@today</span>
+                <span class="datestamp-day">@weekday</span>
+            </div>
+        </div>
+        <p class="tagline">compra da semana — <span class="tagline-count">@totalItems produtos disponíveis</span></p>
+    </header>
+
+    <div class="search">
+        <span class="search-prefix">buscar &gt;</span>
+        <input id="search" type="search" placeholder="digite um produto..." autocomplete="off" spellcheck="false" />
     </div>
 
-    <div class="content">
-        <div class="categories">
-            @foreach (var category in Model.OrderBy(c => c.Key))
+    <section class="grid">
+        @foreach (var category in Model.OrderBy(c => c.Key))
+        {
+            var name = category.Key switch
             {
-                var categoryIcon = category.Key switch
-                {
-                    CategoryType.GrainsAndBakery => "\U0001F33E",
-                    CategoryType.DairyAndEggs => "\U0001F95B",
-                    CategoryType.Meats => "\U0001F969",
-                    CategoryType.Produce => "\U0001F96C",
-                    CategoryType.CondimentsAndSpices => "\U0001F9C2",
-                    CategoryType.BeveragesAndSnacks => "\u2615",
-                    CategoryType.Cleaning => "\U0001F9F9",
-                    CategoryType.PersonalHygiene => "\U0001F9FC",
-                    _ => "\U0001F4E6"
-                };
+                CategoryType.Grains => "grãos e farinhas",
+                CategoryType.Bakery => "padaria e massas",
+                CategoryType.DairyAndEggs => "laticínios e ovos",
+                CategoryType.Meats => "carnes e frios",
+                CategoryType.Produce => "hortifruti",
+                CategoryType.CondimentsAndSpices => "condimentos e temperos",
+                CategoryType.Beverages => "bebidas",
+                CategoryType.Snacks => "doces e lanches",
+                CategoryType.Frozen => "congelados",
+                CategoryType.Alcoholic => "bebidas alcoólicas",
+                CategoryType.Cleaning => "limpeza",
+                CategoryType.PersonalHygiene => "higiene pessoal",
+                CategoryType.Pets => "pet shop",
+                CategoryType.Utilities => "utilidades e bazar",
+                _ => category.Key.ToString().ToLowerInvariant()
+            };
+            var total = category.Value.Count;
 
-                var categoryName = category.Key switch
-                {
-                    CategoryType.GrainsAndBakery => "Grãos e Panificados",
-                    CategoryType.DairyAndEggs => "Laticínios e Ovos",
-                    CategoryType.Meats => "Carnes",
-                    CategoryType.Produce => "Hortifruti",
-                    CategoryType.CondimentsAndSpices => "Condimentos e Temperos",
-                    CategoryType.BeveragesAndSnacks => "Bebidas e Lanches",
-                    CategoryType.Cleaning => "Limpeza",
-                    CategoryType.PersonalHygiene => "Higiene Pessoal",
-                    _ => category.Key.ToString()
-                };
-
-                <div class="category-card">
-                    <div class="category-header">
-                        <span class="category-icon">@categoryIcon</span>
-                        <span class="category-title">@categoryName</span>
-                    </div>
-                    <ul class="items-list">
-                        @foreach (var item in category.Value.OrderBy(i => i.Name))
-                        {
-                            <li class="item-checkbox">
-                                <input type="checkbox" id="item-@item.Id" value="@item.Id" class="item-select" />
-                                <label for="item-@item.Id">@item.Name</label>
-                            </li>
-                        }
-                    </ul>
+            <article class="card">
+                <div class="card-head">
+                    <span class="card-mark" aria-hidden="true">●</span>
+                    <h2 class="card-title">@name</h2>
+                    <span class="card-count"><span class="card-count-n">0</span>/@total</span>
                 </div>
-            }
-        </div>
+                <ul class="rows">
+                    @foreach (var item in category.Value.OrderBy(i => i.Name))
+                    {
+                        <li class="row">
+                            <input type="checkbox" id="item-@item.Id" value="@item.Id" class="item-select" />
+                            <label for="item-@item.Id">@item.Name</label>
+                        </li>
+                    }
+                </ul>
+            </article>
+        }
+    </section>
+</main>
 
-        <div class="action-bar">
-            <div class="selected-count">
-                <span id="count">0</span> itens selecionados
-            </div>
-            <div class="button-group">
-                <button class="btn-select-all" onclick="selectAll()">Selecionar Todos</button>
-                <button class="btn-clear" onclick="clearAll()">Limpar Seleção</button>
-                <button class="btn-whatsapp" id="whatsappBtn" onclick="sendToWhatsApp()" disabled>
-                    Enviar para WhatsApp
-                </button>
-            </div>
+<div class="dock" role="region" aria-label="Ações da lista">
+    <div class="dock-inner">
+        <div class="dock-count">
+            <span class="dock-count-n" id="count">0</span>
+            <span class="dock-count-l">itens marcados</span>
+        </div>
+        <div class="dock-actions">
+            <button type="button" class="btn ghost" id="clearAllBtn">Limpar</button>
+            <button type="button" class="btn ghost" id="selectAllBtn">Marcar visíveis</button>
+            <button type="button" class="btn go" id="whatsappBtn" disabled>
+                Enviar &nbsp;<span aria-hidden="true">→</span>
+            </button>
         </div>
     </div>
 </div>
