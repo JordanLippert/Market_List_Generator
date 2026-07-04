@@ -1,10 +1,18 @@
 using Market_List_Generator.src.Domain.Entities;
 using Market_List_Generator.src.Domain.Interfaces;
+using Market_List_Generator.src.Infrastructure.Catalog;
 
 namespace Market_List_Generator.src.Infrastructure.Repositories;
 
-// TEMPORARY stub — Task 9 replaces this with a CatalogLoader-backed implementation.
 public sealed class ItemRepository : IItemRepository
 {
-    public IReadOnlyList<Item> GetAll() => Array.Empty<Item>();
+    private readonly IReadOnlyList<Item> _items;
+
+    public ItemRepository(CatalogLoader loader)
+    {
+        var (_, items) = loader.Load();
+        _items = items;
+    }
+
+    public IReadOnlyList<Item> GetAll() => _items;
 }
