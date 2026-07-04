@@ -331,3 +331,72 @@ body {
   .dock-actions .btn { flex: 1; text-align: center; }
   .btn.go { flex: 1.5; }
 }
+
+/* ─────────── Variation dialog ─────────── */
+.variation-dialog {
+  border: var(--hairline) solid var(--ink);
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  max-width: 480px;
+  width: calc(100vw - 32px);
+  border-radius: 0;
+  box-shadow: 0 24px 60px rgba(10, 10, 10, 0.25);
+}
+.variation-dialog::backdrop {
+  background: rgba(10, 10, 10, 0.55);
+}
+.variation-dialog-body { padding: 22px 22px 20px; margin: 0; }
+.variation-dialog-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+.variation-dialog-item {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 18px;
+  letter-spacing: 0.02em;
+}
+.variation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.variation-chip {
+  appearance: none;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.variation-chip:hover { background: var(--ink); color: var(--paper); }
+.variation-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.variation-dialog-actions .btn {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.variation-dialog-actions .btn:hover {
+  background: var(--paper-2);
+}
+.row-variation {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 6px;
+}
