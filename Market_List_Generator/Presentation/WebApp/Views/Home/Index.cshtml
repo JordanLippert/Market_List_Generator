@@ -5,8 +5,12 @@
 @{
     ViewData["Title"] = "Lista";
     var totalItems = Model.Sum(c => c.Value.Count);
-    var today = DateTime.Now.ToString("dd.MM");
-    var weekday = System.Globalization.CultureInfo.GetCultureInfo("pt-BR").DateTimeFormat.GetDayName(DateTime.Now.DayOfWeek).ToUpperInvariant();
+    TimeZoneInfo brTz;
+    try { brTz = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo"); }
+    catch { brTz = TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time"); }
+    var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, brTz);
+    var today = now.ToString("dd.MM");
+    var weekday = System.Globalization.CultureInfo.GetCultureInfo("pt-BR").DateTimeFormat.GetDayName(now.DayOfWeek).ToUpperInvariant();
 }
 
 <main class="page">
