@@ -6,11 +6,16 @@ using System.Text;
 // Set UTF-8 encoding
 Console.OutputEncoding = Encoding.UTF8;
 
-var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+// In development the wwwroot lives under Presentation/WebApp/wwwroot;
+// in the published image it's copied to the content root (/app/wwwroot).
+var options = new WebApplicationOptions { Args = args };
+const string devWebRoot = "Presentation/WebApp/wwwroot";
+if (Directory.Exists(devWebRoot))
 {
-    Args = args,
-    WebRootPath = "Presentation/WebApp/wwwroot"
-});
+    options.WebRootPath = devWebRoot;
+}
+
+var builder = WebApplication.CreateBuilder(options);
 
 builder.Services.AddControllersWithViews()
     .AddRazorOptions(options =>
