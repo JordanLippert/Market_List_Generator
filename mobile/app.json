@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Lista",
+    "slug": "market-list-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#F5F1E8",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "bundleIdentifier": "com.jordanlippert.marketlist",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.jordanlippert.marketlist",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F1E8"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
