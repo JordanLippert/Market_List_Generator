@@ -30,12 +30,13 @@
     <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
   </PropertyGroup>
 
-  <!-- Copiar wwwroot do caminho de apresentação para a raiz do publish -->
-  <ItemGroup>
-    <StaticFiles Include="Presentation/WebApp/wwwroot/**/*" />
-  </ItemGroup>
-
+  <!-- Copiar wwwroot do caminho de apresentação para a raiz do publish.
+       ItemGroup DENTRO do target para reavaliar o glob depois do TS compilar,
+       pegando o site.js gerado (que não é versionado no git). -->
   <Target Name="CopyStaticToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <StaticFiles Include="Presentation/WebApp/wwwroot/**/*" />
+    </ItemGroup>
     <MakeDir Directories="$(PublishDir)wwwroot" />
     <Copy SourceFiles="@(StaticFiles)"
           DestinationFiles="@(StaticFiles->'$(PublishDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
