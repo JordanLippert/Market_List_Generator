@@ -16,7 +16,16 @@
     { "key": "Utilities",           "name": "Utilidades e Bazar",     "order": 14 }
   ],
   "items": [
-    { "id": 100, "name": "Arroz",                        "category": "Grains", "variations": [] },
+    {
+      "id": 100,
+      "name": "Arroz",
+      "category": "Grains",
+      "variations": [
+        { "label": "5kg", "unit": "kg", "qty": 5 },
+        { "label": "2kg", "unit": "kg", "qty": 2 },
+        { "label": "1kg", "unit": "kg", "qty": 1 }
+      ]
+    },
     { "id": 101, "name": "Arroz integral",               "category": "Grains", "variations": [] },
     { "id": 102, "name": "Feijão preto",                 "category": "Grains", "variations": [] },
     { "id": 103, "name": "Feijão carioca",               "category": "Grains", "variations": [] },
