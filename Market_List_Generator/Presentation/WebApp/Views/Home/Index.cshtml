@@ -1,5 +1,8 @@
+@using System.Text.Json
 @using Market_List_Generator.src.Domain.Entities
 @using Market_List_Generator.src.Domain.Enums
+@using Market_List_Generator.src.Domain.Interfaces
+@inject ICategoryRepository CategoryRepo
 @model IDictionary<CategoryType, List<Item>>
 
 @{
@@ -10,7 +13,27 @@
     catch { brTz = TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time"); }
     var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, brTz);
     var today = now.ToString("dd.MM");
-    var weekday = System.Globalization.CultureInfo.GetCultureInfo("pt-BR").DateTimeFormat.GetDayName(now.DayOfWeek).ToUpperInvariant();
+    var weekday = System.Globalization.CultureInfo.GetCultureInfo("pt-BR").DateTimeFormat
+        .GetDayName(now.DayOfWeek).ToUpperInvariant();
+
+    string IconFor(CategoryType c) => c switch
+    {
+        CategoryType.Grains => "\U0001F33E",
+        CategoryType.Bakery => "\U0001F956",
+        CategoryType.DairyAndEggs => "\U0001F95B",
+        CategoryType.Meats => "\U0001F969",
+        CategoryType.Produce => "\U0001F96C",
+        CategoryType.CondimentsAndSpices => "\U0001F9C2",
+        CategoryType.Beverages => "\U0001F9C3",
+        CategoryType.Snacks => "\U0001F36A",
+        CategoryType.Frozen => "\U0001F9CA",
+        CategoryType.Alcoholic => "\U0001F37A",
+        CategoryType.Cleaning => "\U0001F9FD",
+        CategoryType.PersonalHygiene => "\U0001F9F4",
+        CategoryType.Pets => "\U0001F43E",
+        CategoryType.Utilities => "\U0001F527",
+        _ => "\U0001F4E6"
+    };
 }
 
 <main class="page">
@@ -31,40 +54,26 @@
     </div>
 
     <section class="grid">
-        @foreach (var category in Model.OrderBy(c => c.Key))
+        @foreach (var descriptor in CategoryRepo.GetAll())
         {
-            var name = category.Key switch
-            {
-                CategoryType.Grains => "grãos e farinhas",
-                CategoryType.Bakery => "padaria e massas",
-                CategoryType.DairyAndEggs => "laticínios e ovos",
-                CategoryType.Meats => "carnes e frios",
-                CategoryType.Produce => "hortifruti",
-                CategoryType.CondimentsAndSpices => "condimentos e temperos",
-                CategoryType.Beverages => "bebidas",
-                CategoryType.Snacks => "doces e lanches",
-                CategoryType.Frozen => "congelados",
-                CategoryType.Alcoholic => "bebidas alcoólicas",
-                CategoryType.Cleaning => "limpeza",
-                CategoryType.PersonalHygiene => "higiene pessoal",
-                CategoryType.Pets => "pet shop",
-                CategoryType.Utilities => "utilidades e bazar",
-                _ => category.Key.ToString().ToLowerInvariant()
-            };
-            var total = category.Value.Count;
+            if (!Model.TryGetValue(descriptor.Key, out var itemsInCategory)) { continue; }
 
             <article class="card">
                 <div class="card-head">
                     <span class="card-mark" aria-hidden="true">●</span>
-                    <h2 class="card-title">@name</h2>
-                    <span class="card-count"><span class="card-count-n">0</span>/@total</span>
+                    <span class="card-icon" aria-hidden="true">@IconFor(descriptor.Key)</span>
+                    <h2 class="card-title">@descriptor.Name.ToLowerInvariant()</h2>
+                    <span class="card-count"><span class="card-count-n">0</span>/@itemsInCategory.Count</span>
                 </div>
                 <ul class="rows">
-                    @foreach (var item in category.Value.OrderBy(i => i.Name))
+                    @foreach (var item in itemsInCategory.OrderBy(i => i.Name))
                     {
-                        <li class="row">
+                        var variationsJson = JsonSerializer.Serialize(
+                            item.Variations.Select(v => v.Label).ToArray());
+                        <li class="row" data-variations="@variationsJson">
                             <input type="checkbox" id="item-@item.Id" value="@item.Id" class="item-select" />
                             <label for="item-@item.Id">@item.Name</label>
+                            <span class="row-variation" data-variation=""></span>
                         </li>
                     }
                 </ul>
@@ -88,3 +97,14 @@
         </div>
     </div>
 </div>
+
+<dialog id="variationDialog" class="variation-dialog" aria-labelledby="variationDialogTitle">
+    <form method="dialog" class="variation-dialog-body">
+        <h2 id="variationDialogTitle" class="variation-dialog-title">Escolha a variação</h2>
+        <p class="variation-dialog-item" id="variationDialogItem"></p>
+        <div class="variation-chips" id="variationChips"></div>
+        <div class="variation-dialog-actions">
+            <button type="button" class="btn ghost" id="variationCancel">Cancelar</button>
+        </div>
+    </form>
+</dialog>
