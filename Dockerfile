@@ -2,6 +2,10 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /app
 
+# Node.js required by Microsoft.TypeScript.MSBuild to compile .ts sources
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy csproj and restore as distinct layers
 COPY Market_List_Generator/Market_List_Generator.csproj ./
 RUN dotnet restore
