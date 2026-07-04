@@ -8,14 +8,12 @@ Console.OutputEncoding = Encoding.UTF8;
 
 // In development the wwwroot lives under Presentation/WebApp/wwwroot;
 // in the published image it's copied to the content root (/app/wwwroot).
-var options = new WebApplicationOptions { Args = args };
 const string devWebRoot = "Presentation/WebApp/wwwroot";
-if (Directory.Exists(devWebRoot))
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
-    options.WebRootPath = devWebRoot;
-}
-
-var builder = WebApplication.CreateBuilder(options);
+    Args = args,
+    WebRootPath = Directory.Exists(devWebRoot) ? devWebRoot : null
+});
 
 builder.Services.AddControllersWithViews()
     .AddRazorOptions(options =>
