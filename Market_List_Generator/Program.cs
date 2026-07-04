@@ -22,7 +22,10 @@ builder.Services.AddControllersWithViews()
         options.ViewLocationFormats.Add("/Presentation/WebApp/Views/Shared/{0}.cshtml");
     });
 
+builder.Services.AddSingleton<Market_List_Generator.src.Infrastructure.Catalog.CatalogLoader>();
 builder.Services.AddSingleton<IItemRepository, ItemRepository>();
+builder.Services.AddSingleton<Market_List_Generator.src.Domain.Interfaces.ICategoryRepository,
+                              Market_List_Generator.src.Infrastructure.Repositories.CategoryRepository>();
 builder.Services.AddSingleton<MarketListService>();
 
 var app = builder.Build();
