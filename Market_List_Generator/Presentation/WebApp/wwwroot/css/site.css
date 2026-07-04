@@ -393,6 +393,8 @@ body {
 }
 .variation-dialog-actions .btn:hover {
   background: var(--paper-2);
+  color: var(--ink);
+  border-color: var(--ink);
 }
 .row-variation {
   font-family: "JetBrains Mono", ui-monospace, monospace;
