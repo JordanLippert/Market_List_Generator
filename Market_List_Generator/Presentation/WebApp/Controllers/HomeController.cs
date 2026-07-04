@@ -1,7 +1,6 @@
 using Market_List_Generator.src.Application.DTOs;
 using Market_List_Generator.src.Application.Services;
 using Market_List_Generator.src.Domain.Entities;
-using Market_List_Generator.src.Domain.Enums;
 using Market_List_Generator.src.Domain.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
@@ -26,8 +25,10 @@ public class HomeController : Controller
     }
 
     [HttpPost]
-    public IActionResult GenerateWhatsAppLink([FromBody] List<SelectedItemDto> selected)
+    public IActionResult GenerateWhatsAppLink([FromBody] List<SelectedItemDto>? selected)
     {
+        if (selected is not { Count: > 0 }) return BadRequest();
+
         var byId = _service.GetItemsGroupedByCategory()
             .SelectMany(g => g.Value)
             .ToDictionary(item => item.Id);
