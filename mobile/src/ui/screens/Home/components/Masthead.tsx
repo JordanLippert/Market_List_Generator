@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { AppText } from '@ui/components/AppText';
 import { theme } from '@ui/styles/theme';
 import * as haptics from '@app/lib/haptics';
@@ -48,7 +49,7 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites }: Masthea
             }}
             style={styles.iconBtn}
           >
-            <AppText family="mono" size="sm" color="ink">Hist</AppText>
+            <Feather name="clock" size={18} color={theme.colors.ink} />
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -60,7 +61,7 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites }: Masthea
             }}
             style={styles.iconBtn}
           >
-            <AppText family="mono" size="sm" color="ink">★</AppText>
+            <Feather name="star" size={18} color={theme.colors.ink} />
           </Pressable>
         </View>
       </View>

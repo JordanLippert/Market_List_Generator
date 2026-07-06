@@ -6,6 +6,7 @@ import Animated, {
   withTiming,
   interpolate
 } from 'react-native-reanimated';
+import { Feather } from '@expo/vector-icons';
 import { AppText } from '@ui/components/AppText';
 import { theme } from '@ui/styles/theme';
 import type { Item } from '@app/types/catalog';
@@ -52,7 +53,7 @@ export function ItemRow({ item, checked, variation, isFavorite, onPress, onLongP
         <AppText family="mono" size="xs" color="muted">({variation})</AppText>
       )}
       {isFavorite && (
-        <AppText family="display" size="sm" color="ink" style={styles.fav}>★</AppText>
+        <Feather name="star" size={14} color={theme.colors.ink} style={styles.fav} />
       )}
     </Pressable>
   );
