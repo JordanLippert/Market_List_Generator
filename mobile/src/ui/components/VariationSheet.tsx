@@ -19,7 +19,7 @@ export const VariationSheet = forwardRef<BottomSheet, VariationSheetProps>(funct
   ref
 ) {
   return (
-    <Sheet ref={ref} snapPoints={['auto']} onClose={onCancel}>
+    <Sheet ref={ref} onClose={onCancel}>
       <AppText family="display" size="lg" color="ink">Escolha a variação</AppText>
       <AppText family="mono" size="xs" color="muted" style={styles.item}>
         {item?.name ?? ''}

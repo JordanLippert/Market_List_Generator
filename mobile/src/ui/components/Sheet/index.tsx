@@ -8,7 +8,7 @@ import BottomSheet, {
 import { theme } from '@ui/styles/theme';
 
 interface SheetProps {
-  snapPoints: (string | number)[];
+  snapPoints?: (string | number)[];
   children: React.ReactNode;
   onClose?: () => void;
 }
@@ -21,11 +21,14 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet({ snapPo
     []
   );
 
+  const dynamic = !snapPoints || snapPoints.length === 0;
+
   return (
     <BottomSheet
       ref={ref}
       index={-1}
-      snapPoints={snapPoints}
+      snapPoints={dynamic ? undefined : snapPoints}
+      enableDynamicSizing={dynamic}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       backgroundStyle={styles.background}
