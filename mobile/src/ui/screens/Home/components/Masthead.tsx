@@ -34,7 +34,7 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites }: Masthea
       </View>
 
       <View style={styles.subRow}>
-        <AppText family="mono" size="xs" color="muted">
+        <AppText family="mono" size="xs" color="muted" style={styles.subText}>
           compra da semana — <AppText family="mono" size="xs" color="ink2">{totalItems} produtos disponíveis</AppText>
         </AppText>
 
@@ -85,7 +85,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: theme.spacing[2]
   },
-  iconBtns: { flexDirection: 'row', gap: 12 },
+  subText: { flex: 1, marginRight: 12 },
+  iconBtns: { flexDirection: 'row', gap: 12, flexShrink: 0 },
   iconBtn: {
     borderWidth: 1.5,
     borderColor: theme.colors.ink,

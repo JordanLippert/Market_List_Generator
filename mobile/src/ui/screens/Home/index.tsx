@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import { theme } from '@ui/styles/theme';
 import { Masthead } from './components/Masthead';
@@ -15,6 +16,7 @@ import type { Item } from '@app/types/catalog';
 
 export function HomeScreen() {
   const list = useList();
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [variationTarget, setVariationTarget] = useState<Item | null>(null);
 
@@ -72,7 +74,10 @@ export function HomeScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + theme.spacing[4] }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <Masthead
           totalItems={totalItems}
           onOpenHistory={() => historyRef.current?.expand()}
