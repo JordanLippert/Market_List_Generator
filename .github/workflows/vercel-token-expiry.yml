@@ -1,0 +1,47 @@
+name: Vercel Token Expiry Check
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check token expiry
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      TOKEN_NAME: github-actions-pracompra
+      WARN_DAYS: 30
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Query Vercel token
+        id: check
+        run: |
+          set -euo pipefail
+          response=$(curl -sf -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" https://api.vercel.com/v5/user/tokens)
+          expires_ms=$(echo "$response" | jq -r --arg name "$TOKEN_NAME" '.tokens[] | select(.name == $name) | .expiresAt')
+          if [ -z "$expires_ms" ] || [ "$expires_ms" = "null" ]; then
+            echo "Token not found or no expiration set" >&2
+            exit 1
+          fi
+          now_ms=$(( $(date +%s) * 1000 ))
+          days=$(( (expires_ms - now_ms) / 86400000 ))
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          echo "expires_iso=$(date -u -d @$(( expires_ms / 1000 )) +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          echo "Token expires in $days days"
+
+      - name: Open issue if expiring soon
+        if: fromJson(steps.check.outputs.days) <= fromJson(env.WARN_DAYS)
+        run: |
+          title="Vercel token expira em ${{ steps.check.outputs.days }} dias"
+          existing=$(gh issue list --search "$title in:title state:open" --json number --jq '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            echo "Issue já aberta: #$existing"
+            exit 0
+          fi
+          gh issue create \
+            --title "$title" \
+            --body "O token \`$TOKEN_NAME\` na Vercel expira em **${{ steps.check.outputs.expires_iso }}**.\n\nPassos:\n1. https://vercel.com/account/tokens — gerar novo token full-scope, expiration 1 ano\n2. \`gh secret set VERCEL_TOKEN\` no repo\n3. Revogar o token antigo\n4. Fechar essa issue" \
+            --label "infra"
