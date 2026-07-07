@@ -1,206 +1,76 @@
 # Market List Generator
 
-Gerador de Lista de Compras com envio automático para WhatsApp!
+Lista de compras pro mercado. Dois frontends, um catálogo compartilhado, envio pronto pro WhatsApp.
 
-## Site em funcionamento
+- **Web C#** — `https://market-list-generator.onrender.com` (cold start ~10s no Render Free)
+- **PWA Pracomprá** — `https://pracompra.vercel.app` (instalável no iPhone e Android, funciona offline)
 
-- URL: https://market-list-generator.onrender.com/
-- Observação: se aparecer uma tela preta do Render ao acessar, aguarde cerca de 5–10 segundos para o serviço ativar o site (cold start).
+Ambos leem o mesmo `shared/catalog.json`, então itens e categorias ficam sincronizados.
 
-## Descrição
+## Estrutura
 
-Este é um projeto de automação pessoal desenvolvido em **C# e .NET** que permite criar rapidamente uma lista de compras através de uma interface web moderna e enviá-la formatada diretamente para o WhatsApp.
-
-## Funcionalidades
-
-- Interface web responsiva e moderna
-- Seleção rápida de itens por categoria
-- Organização automática por categorias (Grãos, Laticínios, Carnes, Hortifruti, etc.)
-- Geração automática de link do WhatsApp
-- Mensagem formatada com emojis
-- Botões para selecionar/limpar todos os itens
-- Contador de itens selecionados
-
-## Como Executar
-
-### Pré-requisitos
-
-- SDK do .NET instalado (versão 8.0 ou superior recomendada)
-
-### Executar o Projeto
-
-#### Opção 1: Via Script Batch (Windows)
-
-```bash
-start.bat
+```
+Market_List_Generator/
+├── shared/
+│   └── catalog.json                # itens + categorias (fonte da verdade)
+├── Market_List_Generator/          # frontend C# .NET 8 (ASP.NET MVC)
+│   ├── src/                        # Domain / Application / Infrastructure
+│   ├── Presentation/WebApp/        # Views Razor + wwwroot
+│   └── Program.cs
+├── mobile/                         # frontend Expo React Native + PWA
+│   ├── src/                        # app + ui + service worker
+│   ├── public/                     # manifest + ícones PWA
+│   ├── scripts/                    # build SW, post-build inject
+│   └── vercel.json → (../vercel.json)
+├── docs/superpowers/               # specs e planos de sessões
+├── vercel.json                     # config deploy PWA
+├── render.yaml                     # config deploy C# no Render
+└── .github/workflows/              # CI + deploy Vercel + expiry check
 ```
 
-#### Opção 2: Via Terminal
+## Rodar local
 
-```bash
+### Web C# (.NET 8)
+
+```
 cd Market_List_Generator
 dotnet run
 ```
 
-#### Opção 3: Via Visual Studio
+Acessa `https://localhost:51773`.
 
-1. Abra o projeto no Visual Studio
-2. Pressione **F5** ou clique em **Run**
-3. O navegador abrirá automaticamente
-
-### Acessar a Aplicação
-
-Após executar, acesse no navegador:
-
-- **HTTPS**: https://localhost:51773
-- **HTTP**: http://localhost:51774
-
-## Como Usar
-
-1. **Selecione os itens** que deseja comprar clicando nas caixas de seleção
-2. Veja o **contador** de itens selecionados na parte inferior
-3. Use os botões:
-   - **Selecionar Todos**: Marca todos os itens
-   - **Limpar Seleção**: Desmarca todos os itens
-   - **Enviar para WhatsApp**: Abre o WhatsApp com a mensagem formatada
-4. O WhatsApp Web/Desktop abrirá automaticamente com a mensagem pronta
-5. Envie para você mesmo ou para outra pessoa!
-
-## Categorias Disponíveis
-
-- **Grãos e Panificados** - Arroz, Macarrão, Pão, Farinha, etc.
-- **Laticínios e Ovos** - Leite, Queijo, Iogurte, Ovos, etc.
-- **Carnes** - Frango, Carne bovina, Embutidos, etc.
-- **Hortifruti** - Frutas, Verduras, Legumes
-- **Condimentos e Temperos** - Sal, Açúcar, Molhos, Temperos
-- **Bebidas e Lanches** - Café, Sucos, Refrigerantes, etc.
-- **Limpeza** - Produtos de limpeza doméstica
-- **Higiene Pessoal** - Sabonete, Shampoo, Desodorante, etc.
-
-## Arquitetura
-
-O projeto segue uma arquitetura limpa em camadas:
+### Mobile / PWA (Expo SDK 54)
 
 ```
-Market_List_Generator/
-├── src/
-│   ├── Domain/                    # Camada de Domínio
-│   │   ├── Entities/              # Entidades do domínio
-│   │   │   └── Item.cs
-│   │   ├── Enums/                 # Enumerações
-│   │   │   └── CategoryType.cs
-│   │   └── Interfaces/            # Contratos
-│   │       └── IItemRepository.cs
-│   │
-│   ├── Application/               # Camada de Aplicação
-│   │   └── Services/              # Lógica de negócio
-│   │       └── MarketListService.cs
-│   │
-│   └── Infrastructure/            # Camada de Infraestrutura
-│       └── Repositories/          # Implementações de repositórios
-│           └── ItemRepository.cs
-│
-├── Presentation/                  # Camada de Apresentação
-│   └── WebApp/
-│       ├── Controllers/           # Controllers MVC
-│       │   └── HomeController.cs
-│       ├── Views/                 # Views Razor
-│       │   ├── Shared/
-│       │   │   └── _Layout.cshtml
-│       │   └── Home/
-│       │       └── Index.cshtml
-│       ├── _ViewStart.cshtml
-│       └── wwwroot/               # Arquivos estáticos
-│           ├── css/
-│           │   └── site.css
-│           └── js/
-│               └── site.js
-│
-├── Properties/                    # Configurações do projeto
-│   └── launchSettings.json
-│
-├── Program.cs                     # Ponto de entrada da aplicação
-├── appsettings.json              # Configurações gerais
-├── Market_List_Generator.csproj  # Arquivo do projeto
-├── start.bat                     # Script de inicialização
-└── README.md                     # Este arquivo
+cd mobile
+pnpm install
+pnpm start                          # Expo Dev, escolhe web/iOS/Android
+pnpm run build:web                  # gera PWA em mobile/dist
 ```
 
-## Tecnologias Utilizadas
+Mais detalhes em [`mobile/README.md`](mobile/README.md).
 
-- **C#**
-- **.NET**
-- **ASP.NET Core MVC**
-- **Razor Pages**
-- **HTML5/CSS3**
-- **JavaScript (Vanilla)**
+## CI/CD
 
-## Exemplo de Mensagem Gerada
+Três workflows em `.github/workflows/`:
 
-```
-*LISTA DE COMPRAS*
+- **`ci.yml`** — em PR e push master: typecheck + build PWA. Upload dist como artifact.
+- **`deploy-web.yml`** — em push master: deploy Vercel automático via CLI.
+- **`vercel-token-expiry.yml`** — cron semanal: abre issue quando o token Vercel está a ≤30 dias de expirar.
 
-*Grãos e Panificados*
-  - Arroz
-  - Macarrão
-  - Pão
+Secrets necessárias no repo (setadas via `gh secret set`):
 
-*Laticínios e Ovos*
-  - Leite
-  - Ovos
-  - Queijo
+- `VERCEL_TOKEN` — token full-scope de `vercel.com/account/tokens`
+- `VERCEL_ORG_ID` — de `.vercel/project.json`
+- `VERCEL_PROJECT_ID` — de `.vercel/project.json`
 
-*Carnes*
-  - Filé de peito
-  - Carne moída
+## Editar catálogo
 
-*Hortifruti*
-  - Alface
-  - Tomate
-  - Batata
-```
+Toda mudança de item/categoria em `shared/catalog.json` reflete nos dois frontends. Categorias novas precisam de emoji também em:
 
-## Personalização
-
-### Adicionar Novos Itens
-
-Edite o arquivo: `src/Infrastructure/Repositories/ItemRepository.cs`
-
-```csharp
-new Item(ID, "Nome do Item", CategoryType.Categoria),
-```
-
-### Adicionar Novas Categorias
-
-1. Adicione a categoria em: `src/Domain/Enums/CategoryType.cs`
-2. Adicione os itens no repositório
-3. Atualize os ícones e nomes de exibição em: `Controllers/HomeController.cs`
-
-### Personalizar Estilo
-
-Edite os arquivos:
-- CSS: `wwwroot/css/site.css`
-- JavaScript: `wwwroot/js/site.js`
-
-## Estrutura de Código
-
-### Camada de Domínio
-Contém as entidades principais e regras de negócio fundamentais.
-
-### Camada de Aplicação
-Contém os serviços que orquestram a lógica de negócio.
-
-### Camada de Infraestrutura
-Contém implementações concretas e acesso a dados.
-
-### Camada de Apresentação
-Controllers e Views para a interface web.
-
-## Licença
-
-Projeto pessoal de automação.
+- Web C#: `Market_List_Generator/Presentation/WebApp/Views/Home/Index.cshtml`
+- Mobile: `mobile/src/app/lib/catalog.ts` (mapa `CATEGORY_EMOJI`)
 
 ## Autor
 
-Jordan Lippert  
-Desenvolvido para facilitar a criação de listas de compras e integração com WhatsApp.
+Jordan Lippert
