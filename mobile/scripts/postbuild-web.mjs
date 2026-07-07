@@ -38,6 +38,7 @@ ${splashLinks}
     <meta name="theme-color" content="#F5F1E8">
     <meta name="mobile-web-app-capable" content="yes">
     <style>
+      html, body { background-color: #F5F1E8; }
       html { scrollbar-width: none; -ms-overflow-style: none; }
       html::-webkit-scrollbar, *::-webkit-scrollbar { display: none; }
       * { scrollbar-width: none; -ms-overflow-style: none; }
