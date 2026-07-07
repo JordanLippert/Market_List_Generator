@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { AppText } from '@ui/components/AppText';
 import { theme } from '@ui/styles/theme';
 import type { Item, CategoryDescriptor } from '@app/types/catalog';
+import { getCategoryEmoji } from '@app/lib/catalog';
 import { ItemRow } from './ItemRow';
 import { useList } from '@app/contexts/ListContext';
 
@@ -20,7 +21,7 @@ export function CategoryCard({ descriptor, items, selectedCount, onItemPress, on
   return (
     <View style={styles.card}>
       <View style={styles.head}>
-        <AppText family="display" size="xs" color="ink">●</AppText>
+        <AppText family="display" size="lg" color="ink">{getCategoryEmoji(descriptor.key)}</AppText>
         <AppText family="display" size="lg" color="ink" style={styles.title}>
           {descriptor.name.toLowerCase()}
         </AppText>

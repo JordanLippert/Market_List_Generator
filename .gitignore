@@ -37,3 +37,6 @@ mobile/dist/
 
 # SW generated
 mobile/public/sw.js
+
+.vercel
+.env*

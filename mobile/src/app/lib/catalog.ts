@@ -17,6 +17,27 @@ export function getCategoryName(key: CategoryKey): string {
   return categoriesSorted.find((c) => c.key === key)?.name ?? key;
 }
 
+const CATEGORY_EMOJI: Record<string, string> = {
+  Grains: '🌾',
+  Bakery: '🥖',
+  DairyAndEggs: '🥛',
+  Meats: '🥩',
+  Produce: '🥬',
+  CondimentsAndSpices: '🧂',
+  Beverages: '🧃',
+  Snacks: '🍪',
+  Frozen: '🧊',
+  Alcoholic: '🍺',
+  Cleaning: '🧽',
+  PersonalHygiene: '🧴',
+  Pets: '🐾',
+  Utilities: '🔧'
+};
+
+export function getCategoryEmoji(key: CategoryKey): string {
+  return CATEGORY_EMOJI[key] ?? '📦';
+}
+
 export function getItems(): Item[] {
   return catalog.items;
 }
