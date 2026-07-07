@@ -38,5 +38,8 @@ mobile/dist/
 # SW generated
 mobile/public/sw.js
 
+# Splash images generated at build time
+mobile/public/icons/splash-*.png
+
 .vercel
 .env*

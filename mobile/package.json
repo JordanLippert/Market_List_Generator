@@ -10,7 +10,8 @@
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
     "build:sw": "node scripts/build-sw.mjs",
-    "build:web": "pnpm run build:sw && expo export -p web && node scripts/postbuild-web.mjs",
+    "gen:splash": "node scripts/gen-splash.mjs",
+    "build:web": "pnpm run gen:splash && pnpm run build:sw && expo export -p web && node scripts/postbuild-web.mjs",
     "preview:web": "pnpm run build:web && npx serve mobile/dist",
     "deploy:web": "pnpm run build:web && pnpm dlx vercel --prod"
   },
@@ -41,6 +42,7 @@
     "@babel/core": "^7.28.5",
     "@types/react": "~19.1.17",
     "esbuild": "^0.24.0",
+    "sharp": "^0.35.3",
     "typescript": "~5.9.3"
   }
 }
