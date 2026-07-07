@@ -25,7 +25,7 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites }: Masthea
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
-        <AppText family="display" size="3xl" color="ink" style={styles.wordmark}>Prafeira.</AppText>
+        <AppText family="display" size="3xl" color="ink" style={styles.wordmark}>Pracomprá.</AppText>
         <View style={{ flex: 1 }} />
         <View style={styles.stampCol}>
           <AppText family="mono" size="xs" color="ink">{date}</AppText>
