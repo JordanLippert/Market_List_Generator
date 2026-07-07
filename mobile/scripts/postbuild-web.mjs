@@ -36,7 +36,12 @@ ${splashLinks}
     <meta name="apple-mobile-web-app-title" content="Pracomprá">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#F5F1E8">
-    <meta name="mobile-web-app-capable" content="yes">`;
+    <meta name="mobile-web-app-capable" content="yes">
+    <style>
+      html { scrollbar-width: none; -ms-overflow-style: none; }
+      html::-webkit-scrollbar, *::-webkit-scrollbar { display: none; }
+      * { scrollbar-width: none; -ms-overflow-style: none; }
+    </style>`;
 
 const bodyInject = `
     <script>
