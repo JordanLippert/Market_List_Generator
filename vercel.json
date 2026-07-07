@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd mobile && pnpm run build:web",
+  "buildCommand": "cd mobile && corepack pnpm run build:web",
   "outputDirectory": "mobile/dist",
-  "installCommand": "corepack enable && corepack prepare pnpm@11.10.0 --activate && cd mobile && pnpm install --frozen-lockfile",
+  "installCommand": "cd mobile && corepack enable && corepack pnpm install --frozen-lockfile",
   "framework": null,
   "headers": [
     {
