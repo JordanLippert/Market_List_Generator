@@ -8,6 +8,11 @@ const source = resolve(iconsDir, 'icon.png');
 
 const paper = { r: 245, g: 241, b: 232, alpha: 1 };
 
+// icon.png's own background is baked in slightly off the paper tone
+// (~rgb(244,236,228)); shift every pixel so it matches exactly before compositing.
+const iconBg = { r: 244, g: 236, b: 228 };
+const bgCorrection = [paper.r - iconBg.r, paper.g - iconBg.g, paper.b - iconBg.b];
+
 const sizes = [
   [1290, 2796],
   [1179, 2556],
@@ -22,7 +27,11 @@ const sizes = [
 
 for (const [w, h] of sizes) {
   const iconSize = Math.round(Math.min(w, h) * 0.4);
-  const icon = await sharp(source).resize(iconSize, iconSize, { fit: 'contain' }).png().toBuffer();
+  const icon = await sharp(source)
+    .linear([1, 1, 1], bgCorrection)
+    .resize(iconSize, iconSize, { fit: 'contain' })
+    .png()
+    .toBuffer();
   const out = resolve(iconsDir, `splash-${w}x${h}.png`);
   await sharp({ create: { width: w, height: h, channels: 4, background: paper } })
     .composite([{ input: icon, gravity: 'center' }])

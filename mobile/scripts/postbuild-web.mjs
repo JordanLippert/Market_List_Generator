@@ -58,6 +58,10 @@ if (html.includes('/manifest.webmanifest')) {
 }
 
 const patched = html
+  .replace(
+    /<meta name="viewport" content="[^"]*"\s*\/?>/,
+    '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover">'
+  )
   .replace('</head>', `${headInject}\n  </head>`)
   .replace('</body>', `${bodyInject}\n  </body>`);
 
