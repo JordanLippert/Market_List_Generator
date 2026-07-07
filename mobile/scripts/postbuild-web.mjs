@@ -9,7 +9,7 @@ const html = await readFile(distIndex, 'utf8');
 
 const headInject = `
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/icons/icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Pracomprá">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
