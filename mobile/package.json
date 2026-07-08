@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "build:sw": "node scripts/build-sw.mjs",
     "gen:splash": "node scripts/gen-splash.mjs",
-    "build:web": "pnpm run gen:splash && pnpm run build:sw && expo export -p web && node scripts/postbuild-web.mjs",
+    "build:web": "pnpm run gen:splash && pnpm run build:sw && expo export -p web && node scripts/postbuild-sw.mjs && node scripts/postbuild-web.mjs",
     "preview:web": "pnpm run build:web && npx serve mobile/dist",
     "deploy:web": "pnpm run build:web && pnpm dlx vercel --prod"
   },

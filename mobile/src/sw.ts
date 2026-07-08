@@ -1,16 +1,19 @@
 /// <reference lib="webworker" />
 export {};
 
-declare const self: ServiceWorkerGlobalScope;
+declare const self: ServiceWorkerGlobalScope & {
+  __SW_VERSION__?: string;
+  __PRECACHE_ASSETS__?: string[];
+};
 
-const VERSION = 'v1';
+const VERSION = self.__SW_VERSION__ ?? 'dev';
 const RUNTIME_CACHE = `pracompra-runtime-${VERSION}`;
 const SHELL_CACHE = `pracompra-shell-${VERSION}`;
-const SHELL_URLS = ['/', '/manifest.webmanifest'];
+const PRECACHE_URLS = ['/', '/manifest.webmanifest', ...(self.__PRECACHE_ASSETS__ ?? [])];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_URLS)).then(() => self.skipWaiting())
+    caches.open(SHELL_CACHE).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
   );
 });
 
@@ -33,13 +36,18 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  const isNavigation = req.mode === 'navigate' || req.destination === 'document';
+
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) {
         fetchAndCache(req).catch(() => {});
         return cached;
       }
-      return fetchAndCache(req).catch(() => caches.match('/') as Promise<Response>);
+      return fetchAndCache(req).catch(() => {
+        if (isNavigation) return caches.match('/').then((res) => res ?? Response.error());
+        return Response.error();
+      });
     })
   );
 });
