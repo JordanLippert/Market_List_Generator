@@ -1,6 +1,6 @@
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve, join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -22,12 +22,33 @@ async function listFiles(dir, base) {
   return files;
 }
 
-// Precache only the app-shell JS bundle(s). Fonts/icons (~18MB, mostly unused
-// weights/families pulled in by Metro) blow past the SW install time/quota
-// budget on iOS if precached, causing cache.addAll to fail atomically and the
-// SW to never activate. They still get cached on first use via runtime cache.
+// Precache the app-shell JS bundle(s) plus only the specific font/icon files
+// the app actually uses (src/ui/App.tsx, Masthead/ItemRow Feather icon).
+// Precaching ALL of dist/assets (~18MB, every unused icon family and font
+// weight Metro bundles in) blew past iOS's SW install time/quota budget,
+// making cache.addAll fail atomically and the SW never activate. This
+// whitelist keeps the payload small (~1MB) while still covering everything
+// visible on first paint.
+const USED_FONT_FILES = [
+  'SpaceGrotesk_500Medium',
+  'SpaceGrotesk_700Bold',
+  'Inter_400Regular',
+  'Inter_500Medium',
+  'Inter_600SemiBold',
+  'JetBrainsMono_400Regular',
+  'JetBrainsMono_500Medium',
+  'Feather'
+];
+
 const jsDir = resolve(distDir, '_expo/static/js/web');
-const assets = (await listFiles(jsDir, distDir)).sort();
+const jsFiles = await listFiles(jsDir, distDir);
+
+const allAssetFiles = await listFiles(resolve(distDir, 'assets'), distDir);
+const fontFiles = allAssetFiles.filter((f) =>
+  USED_FONT_FILES.some((name) => basename(f).startsWith(name + '.'))
+);
+
+const assets = [...jsFiles, ...fontFiles].sort();
 const version = createHash('sha1').update(assets.join(',')).digest('hex').slice(0, 10);
 
 let sw = await readFile(swPath, 'utf8');
