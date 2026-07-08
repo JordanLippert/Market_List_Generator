@@ -7,8 +7,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = resolve(__dirname, '../dist');
 const swPath = resolve(distDir, 'sw.js');
 
-const SKIP = new Set(['sw.js', 'metadata.json']);
-
 async function listFiles(dir, base) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
@@ -18,13 +16,18 @@ async function listFiles(dir, base) {
       files.push(...(await listFiles(full, base)));
     } else {
       const rel = full.slice(base.length + 1).split('\\').join('/');
-      if (!SKIP.has(rel)) files.push('/' + rel);
+      files.push('/' + rel);
     }
   }
   return files;
 }
 
-const assets = (await listFiles(distDir, distDir)).sort();
+// Precache only the app-shell JS bundle(s). Fonts/icons (~18MB, mostly unused
+// weights/families pulled in by Metro) blow past the SW install time/quota
+// budget on iOS if precached, causing cache.addAll to fail atomically and the
+// SW to never activate. They still get cached on first use via runtime cache.
+const jsDir = resolve(distDir, '_expo/static/js/web');
+const assets = (await listFiles(jsDir, distDir)).sort();
 const version = createHash('sha1').update(assets.join(',')).digest('hex').slice(0, 10);
 
 let sw = await readFile(swPath, 'utf8');
