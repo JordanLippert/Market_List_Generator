@@ -51,33 +51,6 @@ const bodyInject = `
           navigator.serviceWorker.register('/sw.js').catch(function () {});
         });
       }
-    </script>
-    <script>
-      // TEMP DEBUG — remove after offline diagnosis
-      (function () {
-        var el = document.createElement('div');
-        el.style.cssText = 'position:fixed;bottom:4px;right:4px;z-index:99999;background:rgba(0,0,0,.8);color:#0f0;font:9px monospace;padding:4px 6px;border-radius:4px;max-width:220px;white-space:pre-wrap;pointer-events:none;';
-        el.textContent = 'sw: init';
-        function mount() { document.body.appendChild(el); }
-        if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
-        function report(reg) {
-          caches.keys().then(function (keys) {
-            return Promise.all(keys.map(function (k) {
-              return caches.open(k).then(function (c) { return c.keys(); }).then(function (reqs) { return k + ': ' + reqs.length; });
-            }));
-          }).then(function (parts) {
-            el.textContent = 'sw: ' + (reg.active ? reg.active.state : 'no-active') + '\\n' + parts.join('\\n');
-          });
-        }
-        if (!('serviceWorker' in navigator)) { el.textContent = 'sw: unsupported'; return; }
-        navigator.serviceWorker.register('/sw.js').then(function (reg) {
-          report(reg);
-          if (reg.installing) reg.installing.addEventListener('statechange', function () { report(reg); });
-          navigator.serviceWorker.addEventListener('controllerchange', function () { report(reg); });
-        }).catch(function (err) {
-          el.textContent = 'sw-error: ' + err;
-        });
-      })();
     </script>`;
 
 if (html.includes('/manifest.webmanifest')) {
