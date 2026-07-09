@@ -11,9 +11,13 @@ interface SheetProps {
   snapPoints?: (string | number)[];
   children: React.ReactNode;
   onClose?: () => void;
+  onChange?: (index: number) => void;
 }
 
-export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet({ snapPoints, children, onClose }, ref) {
+export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet(
+  { snapPoints, children, onClose, onChange },
+  ref
+) {
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.55} />
@@ -34,6 +38,7 @@ export const Sheet = forwardRef<BottomSheet, SheetProps>(function Sheet({ snapPo
       backgroundStyle={styles.background}
       handleIndicatorStyle={styles.handle}
       onClose={onClose}
+      onChange={onChange}
     >
       <BottomSheetView style={styles.body}>
         <View style={{ flex: 1 }}>{children}</View>

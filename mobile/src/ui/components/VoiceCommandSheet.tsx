@@ -1,6 +1,6 @@
-import React, { forwardRef, useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
-import BottomSheet from '@gorhom/bottom-sheet';
+import React, { forwardRef, useRef, useState } from 'react';
+import { StyleSheet } from 'react-native';
+import BottomSheet, { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { Sheet } from '@ui/components/Sheet';
 import { AppText } from '@ui/components/AppText';
 import { Button } from '@ui/components/Button';
@@ -16,6 +16,7 @@ export const VoiceCommandSheet = forwardRef<BottomSheet, VoiceCommandSheetProps>
   ref
 ) {
   const [text, setText] = useState('');
+  const inputRef = useRef<React.ComponentRef<typeof BottomSheetTextInput>>(null);
 
   const handleSubmit = () => {
     const trimmed = text.trim();
@@ -25,20 +26,27 @@ export const VoiceCommandSheet = forwardRef<BottomSheet, VoiceCommandSheetProps>
   };
 
   return (
-    <Sheet ref={ref} snapPoints={['45%']} onClose={onClose}>
+    <Sheet
+      ref={ref}
+      snapPoints={['45%']}
+      onClose={onClose}
+      onChange={(index) => {
+        if (index >= 0) inputRef.current?.focus();
+      }}
+    >
       <AppText family="display" size="lg" color="ink">Adicionar por voz</AppText>
       <AppText family="mono" size="xs" color="muted" style={styles.subtitle}>
         toque no campo, use o microfone do teclado, dite os itens separados por vírgula ou "e"
       </AppText>
 
-      <TextInput
+      <BottomSheetTextInput
+        ref={inputRef}
         value={text}
         onChangeText={setText}
         placeholder="arroz, feijão, leite..."
         placeholderTextColor={theme.colors.muted}
         style={styles.input}
         multiline
-        autoFocus
         accessibilityLabel="Ditar itens da lista"
       />
 
