@@ -36,7 +36,7 @@ export const VoiceCommandSheet = forwardRef<BottomSheet, VoiceCommandSheetProps>
     >
       <AppText family="display" size="lg" color="ink">Adicionar por voz</AppText>
       <AppText family="mono" size="xs" color="muted" style={styles.subtitle}>
-        toque no campo, use o microfone do teclado, dite os itens separados por vírgula ou "e"
+        toque no campo, use o microfone do teclado, dite os itens naturalmente
       </AppText>
 
       <BottomSheetTextInput
@@ -62,8 +62,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.ink,
     padding: theme.spacing[3],
     fontFamily: theme.fontFamily.mono,
-    // iOS Safari auto-zooms the viewport on focus for inputs under 16px
-    fontSize: 16,
+    fontSize: theme.inputFontSize,
     color: theme.colors.ink,
     minHeight: 80,
     textAlignVertical: 'top'

@@ -28,13 +28,13 @@ Decision: use the OS keyboard's built-in dictation (the mic button every iOS/And
    - If already selected (`list.isSelected(item.id)`), skip it (avoid accidentally deselecting).
    - If the item has variations, select the first/default variation: `list.toggle(item.id, item.variations[0].label)`.
    - Otherwise: `list.toggle(item.id)`.
-5. Sheet closes. `Toast` shows a summary: `"3 adicionados: arroz, feijão, leite"`. If nothing matched at all: `"Nenhum item reconhecido, tenta de novo"`.
+5. Sheet closes. `Toast` shows one of three summaries: `"3 adicionados: arroz, feijão, leite"` when something new got added; `"Esses itens já estavam marcados"` when everything the parser recognized was already selected (nothing new to add, but the phrase WAS understood — distinct from the message below); or `"Nenhum item reconhecido, tenta de novo"` only when nothing in the phrase matched any catalog item at all.
 
 **Trade-off accepted:** without delimiters to anchor fragment boundaries, there's no reliable way to report which specific words in the phrase weren't recognized — so unmatched-fragment reporting was dropped entirely (the toast either lists what got added, or says nothing was recognized). This was a deliberate simplification, not an oversight — precision here isn't achievable without re-introducing the delimiter dependency that caused the original bug.
 
 ## Matching tolerance
 
-Exact substring match against the full dictated text (case-insensitive, no accent-stripping, no fuzzy/typo tolerance) — same rule as the existing search bar, just applied to the whole phrase instead of a comma-delimited fragment. Keeps behavior consistent and predictable; revisit only if real usage shows dictation mishears are a frequent problem.
+Substring match against the full dictated text (case-insensitive, no accent-stripping, no fuzzy/typo tolerance) — same base rule as the existing search bar, but with one addition the search bar doesn't have: **word-boundary checking**. A catalog item only matches if it isn't embedded inside a larger word. This was added after real-device testing showed short item names ("Mel", "Alho", "Pera", "Sal") falsely matching inside unrelated Portuguese words ("me**lhor**", "tra**balho**", "es**pera**", "**sal**ada"). Boundaries are checked with the Unicode-aware `\p{L}` regex (not JS's ASCII-only `\b`), since catalog names include accented letters ("Café", "Açúcar"). This still can't distinguish genuine word-level homographs (e.g. "vela" the verb vs. "Vela" the candle item) — that residual risk is accepted, same as the no-fuzzy-matching trade-off, and is visible/correctable via the Toast summary. Revisit only if real usage shows either mishears or homograph false-positives are frequent problems.
 
 ## Variation handling
 
@@ -44,6 +44,7 @@ Voice-selected items with variations always get the first/default variation with
 
 - Empty/blank dictation → confirm button does nothing (or is disabled while text is empty).
 - Nothing recognized anywhere in the text → toast tells the user to try again; sheet still closes.
+- Everything recognized was already selected (e.g. re-dictating "arroz" when it's already marked) → distinct toast ("Esses itens já estavam marcados") from the "nothing recognized" case — the phrase WAS understood, there was just nothing new to add. Conflating the two would tell the user to retry a phrase that already worked.
 - Overlapping item names in the same text (e.g. "Arroz" inside "Arroz integral") → longer/more specific name wins, shorter one is suppressed for that span, no disambiguation prompt (keeps the flow non-blocking).
 
 ## Testing
