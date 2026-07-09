@@ -43,3 +43,6 @@ mobile/public/icons/splash-*.png
 
 .vercel
 .env*
+
+# Isolated worktrees for feature branches
+.worktrees/
