@@ -41,7 +41,8 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontFamily: theme.fontFamily.mono,
-    fontSize: theme.fontSize.sm,
+    // iOS Safari auto-zooms the viewport on focus for inputs under 16px
+    fontSize: 16,
     color: theme.colors.ink,
     padding: 0
   }
