@@ -91,7 +91,9 @@ export function HomeScreen() {
     voiceRef.current?.close();
 
     if (added.length === 0) {
-      setToastMessage('Nenhum item reconhecido, tenta de novo');
+      setToastMessage(
+        matched.length > 0 ? 'Esses itens já estavam marcados' : 'Nenhum item reconhecido, tenta de novo'
+      );
       return;
     }
     setToastMessage(`${added.length} adicionado${added.length > 1 ? 's' : ''}: ${added.join(', ')}`);
