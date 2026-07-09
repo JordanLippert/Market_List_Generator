@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@ui/components/AppText';
@@ -12,12 +12,14 @@ interface ToastProps {
 
 export function Toast({ message, onDismiss, durationMs = 3000 }: ToastProps) {
   const insets = useSafeAreaInsets();
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
   useEffect(() => {
     if (!message) return;
-    const timer = setTimeout(onDismiss, durationMs);
+    const timer = setTimeout(() => onDismissRef.current(), durationMs);
     return () => clearTimeout(timer);
-  }, [message, durationMs, onDismiss]);
+  }, [message, durationMs]);
 
   if (!message) return null;
 
