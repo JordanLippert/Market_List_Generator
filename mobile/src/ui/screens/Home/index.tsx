@@ -78,7 +78,7 @@ export function HomeScreen() {
   };
 
   const handleVoiceSubmit = (text: string) => {
-    const { matched, unmatched } = parseVoiceCommand(text, getItems());
+    const { matched } = parseVoiceCommand(text, getItems());
     const added: string[] = [];
 
     for (const item of matched) {
@@ -90,16 +90,11 @@ export function HomeScreen() {
 
     voiceRef.current?.close();
 
-    if (added.length === 0 && unmatched.length === 0) return;
     if (added.length === 0) {
       setToastMessage('Nenhum item reconhecido, tenta de novo');
       return;
     }
-    let message = `${added.length} adicionado${added.length > 1 ? 's' : ''}: ${added.join(', ')}`;
-    if (unmatched.length > 0) {
-      message += ` · não reconhecido: ${unmatched.join(', ')}`;
-    }
-    setToastMessage(message);
+    setToastMessage(`${added.length} adicionado${added.length > 1 ? 's' : ''}: ${added.join(', ')}`);
   };
 
   return (

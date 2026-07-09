@@ -4,26 +4,25 @@ import type { Item } from '@app/types/catalog';
 
 const items: Item[] = [
   { id: 1, name: 'Arroz', category: 'Grains', variations: [{ label: '5kg' }, { label: '1kg' }] },
-  { id: 2, name: 'Feijão preto', category: 'Grains', variations: [] },
-  { id: 3, name: 'Leite integral', category: 'DairyAndEggs', variations: [] }
+  { id: 2, name: 'Arroz integral', category: 'Grains', variations: [] },
+  { id: 3, name: 'Feijão preto', category: 'Grains', variations: [] },
+  { id: 4, name: 'Leite integral', category: 'DairyAndEggs', variations: [] }
 ];
 
 describe('parseVoiceCommand', () => {
-  it('matches multiple items separated by commas', () => {
-    const result = parseVoiceCommand('arroz, feijão preto', items);
-    expect(result.matched.map((i) => i.id)).toEqual([1, 2]);
-    expect(result.unmatched).toEqual([]);
+  it('matches multiple items in a phrase with no delimiters (real dictation case)', () => {
+    const result = parseVoiceCommand('arroz feijão preto e leite integral', items);
+    expect(result.matched.map((i) => i.id)).toEqual([1, 3, 4]);
   });
 
-  it('matches items separated by " e "', () => {
-    const result = parseVoiceCommand('arroz e leite integral', items);
-    expect(result.matched.map((i) => i.id)).toEqual([1, 3]);
+  it('still works when the user does say commas', () => {
+    const result = parseVoiceCommand('arroz, feijão preto, leite integral', items);
+    expect(result.matched.map((i) => i.id)).toEqual([1, 3, 4]);
   });
 
-  it('reports unmatched fragments', () => {
-    const result = parseVoiceCommand('arroz, xuxu', items);
-    expect(result.matched.map((i) => i.id)).toEqual([1]);
-    expect(result.unmatched).toEqual(['xuxu']);
+  it('prefers the longer/more specific name on overlap', () => {
+    const result = parseVoiceCommand('quero arroz integral', items);
+    expect(result.matched.map((i) => i.id)).toEqual([2]);
   });
 
   it('is case-insensitive', () => {
@@ -32,19 +31,22 @@ describe('parseVoiceCommand', () => {
   });
 
   it('does not duplicate an item mentioned twice', () => {
-    const result = parseVoiceCommand('arroz, arroz', items);
+    const result = parseVoiceCommand('arroz e arroz', items);
     expect(result.matched.map((i) => i.id)).toEqual([1]);
   });
 
-  it('returns everything unmatched when nothing is found', () => {
+  it('returns matches ordered by where they appear in the text, not catalog order', () => {
+    const result = parseVoiceCommand('leite integral e arroz', items);
+    expect(result.matched.map((i) => i.id)).toEqual([4, 1]);
+  });
+
+  it('returns empty when nothing matches', () => {
     const result = parseVoiceCommand('produto inexistente', items);
     expect(result.matched).toEqual([]);
-    expect(result.unmatched).toEqual(['produto inexistente']);
   });
 
   it('ignores blank input', () => {
     const result = parseVoiceCommand('   ', items);
     expect(result.matched).toEqual([]);
-    expect(result.unmatched).toEqual([]);
   });
 });
