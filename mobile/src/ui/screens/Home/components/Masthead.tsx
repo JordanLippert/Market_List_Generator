@@ -9,6 +9,7 @@ interface MastheadProps {
   totalItems: number;
   onOpenHistory(): void;
   onOpenFavorites(): void;
+  onOpenVoice(): void;
 }
 
 function today(): { date: string; day: string } {
@@ -19,7 +20,7 @@ function today(): { date: string; day: string } {
   return { date, day: dayNames[now.getDay()] };
 }
 
-export function Masthead({ totalItems, onOpenHistory, onOpenFavorites }: MastheadProps) {
+export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoice }: MastheadProps) {
   const { date, day } = today();
 
   return (
@@ -62,6 +63,18 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites }: Masthea
             style={styles.iconBtn}
           >
             <Feather name="star" size={18} color={theme.colors.ink} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Adicionar por voz"
+            hitSlop={12}
+            onPress={() => {
+              haptics.light();
+              onOpenVoice();
+            }}
+            style={styles.iconBtn}
+          >
+            <Feather name="mic" size={18} color={theme.colors.ink} />
           </Pressable>
         </View>
       </View>
