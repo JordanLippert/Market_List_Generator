@@ -10,6 +10,29 @@ interface Candidate {
   end: number;
 }
 
+const LETTER = /\p{L}/u;
+
+function isBoundary(text: string, index: number): boolean {
+  if (index < 0 || index >= text.length) return true;
+  return !LETTER.test(text[index]);
+}
+
+function findWordBoundedOccurrences(haystack: string, needle: string): number[] {
+  const positions: number[] = [];
+  let from = 0;
+  while (true) {
+    const idx = haystack.indexOf(needle, from);
+    if (idx === -1) break;
+    const startBoundary = isBoundary(haystack, idx - 1);
+    const endBoundary = isBoundary(haystack, idx + needle.length);
+    if (startBoundary && endBoundary) {
+      positions.push(idx);
+    }
+    from = idx + 1;
+  }
+  return positions;
+}
+
 export function parseVoiceCommand(text: string, items: Item[]): VoiceCommandResult {
   const normalized = text.toLowerCase();
   if (normalized.trim().length === 0) return { matched: [] };
@@ -17,8 +40,7 @@ export function parseVoiceCommand(text: string, items: Item[]): VoiceCommandResu
   const candidates: Candidate[] = [];
   for (const item of items) {
     const name = item.name.toLowerCase();
-    const start = normalized.indexOf(name);
-    if (start !== -1) {
+    for (const start of findWordBoundedOccurrences(normalized, name)) {
       candidates.push({ item, start, end: start + name.length });
     }
   }
