@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontFamily: theme.fontFamily.mono,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.inputFontSize,
     color: theme.colors.ink,
     padding: 0
   }

@@ -19,6 +19,10 @@ export const theme = {
   fontSize: {
     xs: 11, sm: 13, base: 15, lg: 18, xl: 24, '2xl': 34, '3xl': 56
   },
+  // iOS Safari auto-zooms the viewport on focus for text inputs under 16px.
+  // Not part of the AppText size scale (it's a form-field constraint, not a
+  // text-size choice) — applied directly to TextInput style props.
+  inputFontSize: 16,
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32 },
   hairline: StyleSheet.hairlineWidth
 } as const;

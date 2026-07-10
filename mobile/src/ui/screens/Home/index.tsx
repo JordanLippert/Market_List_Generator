@@ -13,6 +13,9 @@ import { FavoritesSheet } from '@ui/components/FavoritesSheet';
 import { groupItemsByCategory, getItems } from '@app/lib/catalog';
 import { useList } from '@app/contexts/ListContext';
 import type { Item } from '@app/types/catalog';
+import { VoiceCommandSheet } from '@ui/components/VoiceCommandSheet';
+import { Toast } from '@ui/components/Toast';
+import { parseVoiceCommand } from '@app/lib/voiceCommand';
 
 export function HomeScreen() {
   const list = useList();
@@ -23,6 +26,8 @@ export function HomeScreen() {
   const variationRef = useRef<BottomSheet>(null);
   const historyRef = useRef<BottomSheet>(null);
   const favoritesRef = useRef<BottomSheet>(null);
+  const voiceRef = useRef<BottomSheet>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const groups = useMemo(() => groupItemsByCategory(), []);
   const totalItems = useMemo(() => getItems().length, []);
@@ -72,6 +77,28 @@ export function HomeScreen() {
     }
   };
 
+  const handleVoiceSubmit = (text: string) => {
+    const { matched } = parseVoiceCommand(text, getItems());
+    const added: string[] = [];
+
+    for (const item of matched) {
+      if (list.isSelected(item.id)) continue;
+      const variationLabel = item.variations.length > 0 ? item.variations[0].label : undefined;
+      list.toggle(item.id, variationLabel);
+      added.push(item.name);
+    }
+
+    voiceRef.current?.close();
+
+    if (added.length === 0) {
+      setToastMessage(
+        matched.length > 0 ? 'Esses itens já estavam marcados' : 'Nenhum item reconhecido, tenta de novo'
+      );
+      return;
+    }
+    setToastMessage(`${added.length} adicionado${added.length > 1 ? 's' : ''}: ${added.join(', ')}`);
+  };
+
   return (
     <View style={styles.root}>
       <ScrollView
@@ -82,6 +109,7 @@ export function HomeScreen() {
           totalItems={totalItems}
           onOpenHistory={() => historyRef.current?.expand()}
           onOpenFavorites={() => favoritesRef.current?.expand()}
+          onOpenVoice={() => voiceRef.current?.expand()}
         />
         <SearchBar value={query} onChangeText={setQuery} />
         {filteredGroups.map((g) => {
@@ -129,6 +157,12 @@ export function HomeScreen() {
         onRemove={(fav) => list.toggleFavorite(fav.itemId, fav.variationLabel)}
         onClose={() => favoritesRef.current?.close()}
       />
+      <VoiceCommandSheet
+        ref={voiceRef}
+        onSubmit={handleVoiceSubmit}
+        onClose={() => voiceRef.current?.close()}
+      />
+      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </View>
   );
 }

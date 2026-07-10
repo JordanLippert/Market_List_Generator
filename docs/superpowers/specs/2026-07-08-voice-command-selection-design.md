@@ -16,24 +16,25 @@ Decision: use the OS keyboard's built-in dictation (the mic button every iOS/And
 
 - **`VoiceCommandButton`** — mic icon button, placed in `Masthead` (near the history/favorites icons).
 - **`VoiceCommandSheet`** — new bottom sheet (follows the existing `Sheet` component pattern used by `VariationSheet`/`HistorySheet`/`FavoritesSheet`). Contains a single multiline `TextInput` and a confirm button. The user taps the field, uses the keyboard's dictation mic, then taps confirm.
-- **`parseVoiceCommand(text: string, items: Item[]): { matched: Item[]; unmatched: string[] }`** — pure function in `mobile/src/app/lib/voiceCommand.ts`.
+- **`parseVoiceCommand(text: string, items: Item[]): { matched: Item[] }`** — pure function in `mobile/src/app/lib/voiceCommand.ts`.
 - **`Toast`** — new small, auto-dismissing (~3s) banner component. Doesn't exist yet; first use is this feature, but written generically enough for reuse.
 
 ## Data flow
 
 1. User opens `VoiceCommandSheet` via `VoiceCommandButton`, dictates or types a phrase, taps confirm.
-2. `parseVoiceCommand` splits the phrase on commas, " e ", " and ", and newlines. Each fragment is trimmed and lowercased.
-3. For each fragment, search the full catalog (`getItems()`, not just visible/filtered items) for items whose `name.toLowerCase()` includes the fragment — same substring rule the existing search bar uses (no fuzzy matching, per decision below).
-4. If a fragment matches one or more items, the first match in catalog order is taken (deterministic, no ambiguity prompt). If a fragment matches nothing, it's added to `unmatched`.
-5. Caller (`HomeScreen`) applies side effects for each matched item:
+2. **Revised after real-device testing:** iOS dictation doesn't insert commas between spoken items unless the user explicitly says "vírgula" — a natural phrase like "arroz feijão e leite integral" arrives with no separator between "arroz" and "feijão". Splitting on commas/" e " left "arroz feijão" as one unsplittable fragment that matched nothing. `parseVoiceCommand` no longer splits the phrase at all — instead it scans the whole lowercased text for every catalog item name that appears anywhere in it as a substring, using the full catalog (`getItems()`, not just visible/filtered items).
+3. Overlapping matches are resolved by preferring the longer (more specific) item name — e.g. if both "Arroz" and "Arroz integral" would match inside "quero arroz integral", "Arroz integral" wins and consumes that text span, so "Arroz" doesn't also fire redundantly. Matches are deduplicated by item id and returned in the order they appear in the spoken text (left to right), not catalog order — reads naturally in the toast ("you said X then Y").
+4. Caller (`HomeScreen`) applies side effects for each matched item:
    - If already selected (`list.isSelected(item.id)`), skip it (avoid accidentally deselecting).
    - If the item has variations, select the first/default variation: `list.toggle(item.id, item.variations[0].label)`.
    - Otherwise: `list.toggle(item.id)`.
-6. Sheet closes. `Toast` shows a summary: `"3 adicionados: arroz, feijão, leite"`. If some fragments were unmatched: append `"· não reconhecido: xuxu"`. If nothing matched at all: `"Nenhum item reconhecido, tenta de novo"`.
+5. Sheet closes. `Toast` shows one of three summaries: `"3 adicionados: arroz, feijão, leite"` when something new got added; `"Esses itens já estavam marcados"` when everything the parser recognized was already selected (nothing new to add, but the phrase WAS understood — distinct from the message below); or `"Nenhum item reconhecido, tenta de novo"` only when nothing in the phrase matched any catalog item at all.
+
+**Trade-off accepted:** without delimiters to anchor fragment boundaries, there's no reliable way to report which specific words in the phrase weren't recognized — so unmatched-fragment reporting was dropped entirely (the toast either lists what got added, or says nothing was recognized). This was a deliberate simplification, not an oversight — precision here isn't achievable without re-introducing the delimiter dependency that caused the original bug.
 
 ## Matching tolerance
 
-Exact substring match, same rule as the current search bar (case-insensitive, no accent-stripping, no fuzzy/typo tolerance). Keeps behavior consistent and predictable with existing search; revisit only if real usage shows dictation mishears are a frequent problem.
+Substring match against the full dictated text (case-insensitive, no accent-stripping, no fuzzy/typo tolerance) — same base rule as the existing search bar, but with one addition the search bar doesn't have: **word-boundary checking**. A catalog item only matches if it isn't embedded inside a larger word. This was added after real-device testing showed short item names ("Mel", "Alho", "Pera", "Sal") falsely matching inside unrelated Portuguese words ("me**lhor**", "tra**balho**", "es**pera**", "**sal**ada"). Boundaries are checked with the Unicode-aware `\p{L}` regex (not JS's ASCII-only `\b`), since catalog names include accented letters ("Café", "Açúcar"). This still can't distinguish genuine word-level homographs (e.g. "vela" the verb vs. "Vela" the candle item) — that residual risk is accepted, same as the no-fuzzy-matching trade-off, and is visible/correctable via the Toast summary. Revisit only if real usage shows either mishears or homograph false-positives are frequent problems.
 
 ## Variation handling
 
@@ -42,10 +43,11 @@ Voice-selected items with variations always get the first/default variation with
 ## Error handling / edge cases
 
 - Empty/blank dictation → confirm button does nothing (or is disabled while text is empty).
-- No fragments recognized → toast tells the user to try again; sheet still closes.
-- Ambiguous fragment (matches multiple items) → first catalog-order match wins silently, no disambiguation prompt (keeps the flow non-blocking).
+- Nothing recognized anywhere in the text → toast tells the user to try again; sheet still closes.
+- Everything recognized was already selected (e.g. re-dictating "arroz" when it's already marked) → distinct toast ("Esses itens já estavam marcados") from the "nothing recognized" case — the phrase WAS understood, there was just nothing new to add. Conflating the two would tell the user to retry a phrase that already worked.
+- Overlapping item names in the same text (e.g. "Arroz" inside "Arroz integral") → longer/more specific name wins, shorter one is suppressed for that span, no disambiguation prompt (keeps the flow non-blocking).
 
 ## Testing
 
-- `parseVoiceCommand` is a pure function — unit test directly: multi-item phrases, single item, no matches, mixed matches/unmatches, repeated item in the same phrase (should not double-add).
+- `parseVoiceCommand` is a pure function — unit test directly: multi-item phrases with no delimiters (the real dictation case), items separated by commas/" e " (still works, delimiters are just ordinary characters now), no matches, overlapping/substring item names (longest wins), repeated item mentioned twice (should not double-add).
 - Manual verification: dictate on an actual iOS device (Safari PWA) since dictation behavior can't be simulated in the web preview.
