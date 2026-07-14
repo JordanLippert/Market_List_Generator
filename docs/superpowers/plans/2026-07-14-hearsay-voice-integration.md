@@ -44,7 +44,7 @@ packages:
   - "."
   - "vendor/hearsay-pwa/packages/*"
 ```
-(it may also have pre-existing `onlyBuiltDependencies`/`allowBuilds` content above this — leave that as-is, just confirm the `packages:` list is present) and `mobile/package.json`'s `"dependencies"` has `"@hearsay-pwa/react": "workspace:*"` added after `"@gorhom/bottom-sheet"`. If either is missing, add it now.
+(it may also have pre-existing `onlyBuiltDependencies`/`allowBuilds` content above this — leave that as-is, just confirm the `packages:` list is present) and `mobile/package.json`'s `"dependencies"` has **both** `"@hearsay-pwa/core": "workspace:*"` and `"@hearsay-pwa/react": "workspace:*"` added after `"@gorhom/bottom-sheet"` — pnpm's strict `node_modules` isolation only symlinks packages a `package.json` explicitly declares, so `core` needs its own direct entry even though `react` also depends on it (the deep imports in Step 4 reach into `core` directly, bypassing `react` entirely). If either is missing, add it now.
 
 - [ ] **Step 3: Install and verify workspace resolution**
 
