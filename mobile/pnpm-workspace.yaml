@@ -1,6 +1,11 @@
+packages:
+  - "."
+  - "vendor/hearsay-pwa/packages/*"
 onlyBuiltDependencies:
   - esbuild
   - sharp
 allowBuilds:
   esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
   sharp: true
