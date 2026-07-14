@@ -1,0 +1,3 @@
+[submodule "mobile/vendor/hearsay-pwa"]
+	path = mobile/vendor/hearsay-pwa
+	url = https://github.com/JordanLippert/hearsay-pwa.git
