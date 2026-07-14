@@ -55,10 +55,11 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
     });
   }
 
-  const stopRequestedDuringLoadRef = useRef(false);
+  const sessionRef = useRef(0);
 
   useEffect(() => {
     return () => {
+      sessionRef.current += 1;
       recorderRef.current?.cancel();
       clientRef.current?.terminate();
     };
@@ -77,26 +78,25 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
   };
 
   const handleStart = async () => {
+    if (status !== 'idle') return;
     haptics.light();
-    stopRequestedDuringLoadRef.current = false;
+    const session = (sessionRef.current += 1);
     setStatus('loading-model');
     setWaveform(null);
     try {
       await clientRef.current!.preload();
-      if (stopRequestedDuringLoadRef.current) {
-        stopRequestedDuringLoadRef.current = false;
-        setStatus('idle');
-        return;
-      }
+      if (sessionRef.current !== session) return;
       setStatus('recording');
       await recorderRef.current!.start((lvl) => setLevel(lvl));
     } catch (err) {
+      if (sessionRef.current !== session) return;
       setStatus('idle');
       setLevel(0);
       const message =
         err instanceof Error && err.name === 'MicPermissionError'
           ? 'Permita o microfone pra gravar'
           : 'Não deu pra carregar o reconhecimento de voz, tenta o ditado';
+      console.error('[VoiceRecordSheet] start failed', err);
       onError(message);
     }
   };
@@ -104,10 +104,12 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
   const handleStop = async () => {
     setLocked(false);
     if (status === 'loading-model') {
-      stopRequestedDuringLoadRef.current = true;
+      sessionRef.current += 1;
+      setStatus('idle');
       return;
     }
     if (status !== 'recording') return;
+    const session = sessionRef.current;
     setStatus('transcribing');
     setLevel(0);
     try {
@@ -116,11 +118,15 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
         computeWaveform(blob, 18).catch(() => null),
         decodeAudioTo16kMono(blob)
       ]);
+      if (sessionRef.current !== session) return;
       setWaveform(waveformResult);
       const text = await clientRef.current!.transcribe(samples);
+      if (sessionRef.current !== session) return;
       setStatus('idle');
       onSubmit(text);
-    } catch {
+    } catch (err) {
+      if (sessionRef.current !== session) return;
+      console.error('[VoiceRecordSheet] stop/transcribe failed', err);
       setStatus('idle');
       onError('Não deu pra carregar o reconhecimento de voz, tenta o ditado');
     }
@@ -135,7 +141,11 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
       ref={ref}
       snapPoints={['50%']}
       onClose={() => {
+        sessionRef.current += 1;
         recorderRef.current?.cancel();
+        setStatus('idle');
+        setLocked(false);
+        setLevel(0);
         onClose();
       }}
       onChange={handleSheetChange}
