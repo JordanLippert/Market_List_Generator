@@ -11,8 +11,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build:sw": "node scripts/build-sw.mjs",
+    "build:whisper-worker": "node scripts/build-whisper-worker.mjs",
     "gen:splash": "node scripts/gen-splash.mjs",
-    "build:web": "pnpm run gen:splash && pnpm run build:sw && expo export -p web && node scripts/postbuild-sw.mjs && node scripts/postbuild-web.mjs",
+    "build:web": "pnpm run gen:splash && pnpm run build:sw && pnpm run build:whisper-worker && expo export -p web && node scripts/postbuild-sw.mjs && node scripts/postbuild-web.mjs",
     "preview:web": "pnpm run build:web && npx serve mobile/dist",
     "deploy:web": "pnpm run build:web && pnpm dlx vercel --prod"
   },
@@ -24,6 +25,7 @@
     "@gorhom/bottom-sheet": "^5.2.7",
     "@hearsay-pwa/core": "workspace:*",
     "@hearsay-pwa/react": "workspace:*",
+    "@huggingface/transformers": "^3.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~54.0.35",
     "expo-font": "~14.0.12",
