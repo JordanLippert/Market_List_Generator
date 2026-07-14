@@ -701,7 +701,9 @@ git commit -m "feat(mobile): add first-download explanation modal for voice mode
 **Files:**
 - Modify: `mobile/src/ui/components/VoiceRecordSheet/index.tsx` (replaces the Task 1 stub)
 
-Orchestrates `AudioRecorder` (deep-imported), `computeWaveform` (deep-imported), `decodeAudioTo16kMono`, and `WhisperWorkerClient` directly — no `useVoiceCommand`, no `TranscriptionEngine` import anywhere in this file. Mirrors the same "don't open the mic / don't leave a recording orphaned if the user releases during model loading" safety the library's own `useVoiceCommand` already solved once (via a `stopRequestedDuringLoadRef`-style guard), since this task reimplements that same load-then-record sequencing itself.
+Orchestrates `AudioRecorder` (deep-imported), `computeWaveform` (deep-imported), `decodeAudioTo16kMono`, and `WhisperWorkerClient` directly — no `useVoiceCommand`, no `TranscriptionEngine` import anywhere in this file.
+
+Uses a monotonic `sessionRef` counter (not a boolean flag) to guard every async continuation (`handleStart`'s two `await`s, `handleStop`'s chain) — incremented on unmount, on a stop-during-load, and on the sheet's own `onClose`, and checked after every `await` before touching state or calling `recorder.start()`. An earlier boolean-ref version of this (`stopRequestedDuringLoadRef`, mirroring the shape of a guard the underlying library's own `useVoiceCommand` hook already has) shipped with two real bugs caught in review: (1) closing the sheet mid-load never cleared the flag, so a stale `handleStart` continuation could open the mic with no sheet visible; (2) a fast release-then-re-press reset the flag before the first attempt's `preload()` had resolved, orphaning it and letting its late `progress`/`model-ready` messages desync the visible status after a second attempt had already moved on. The session counter fixes both: any cancellation path just bumps the counter, and every suspended continuation compares against the id it captured at the start, so a superseded attempt can never affect state again. (One narrower residual: `WhisperWorkerClient`'s own `onStatusChange` callback isn't session-scoped, so on a very fast double-press during the very first, uncached model download, the status *label* could flicker back to "preparando..." from an abandoned load's late progress message even though the recorder/mic state itself stays correct — cosmetic only, accepted as a known limitation rather than adding request-id tagging through the worker protocol for a first-use-only edge case.)
 
 - [ ] **Step 1: Replace the stub with the full component**
 
@@ -764,10 +766,11 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
     });
   }
 
-  const stopRequestedDuringLoadRef = useRef(false);
+  const sessionRef = useRef(0);
 
   useEffect(() => {
     return () => {
+      sessionRef.current += 1;
       recorderRef.current?.cancel();
       clientRef.current?.terminate();
     };
@@ -786,26 +789,25 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
   };
 
   const handleStart = async () => {
+    if (status !== 'idle') return;
     haptics.light();
-    stopRequestedDuringLoadRef.current = false;
+    const session = (sessionRef.current += 1);
     setStatus('loading-model');
     setWaveform(null);
     try {
       await clientRef.current!.preload();
-      if (stopRequestedDuringLoadRef.current) {
-        stopRequestedDuringLoadRef.current = false;
-        setStatus('idle');
-        return;
-      }
+      if (sessionRef.current !== session) return;
       setStatus('recording');
       await recorderRef.current!.start((lvl) => setLevel(lvl));
     } catch (err) {
+      if (sessionRef.current !== session) return;
       setStatus('idle');
       setLevel(0);
       const message =
         err instanceof Error && err.name === 'MicPermissionError'
           ? 'Permita o microfone pra gravar'
           : 'Não deu pra carregar o reconhecimento de voz, tenta o ditado';
+      console.error('[VoiceRecordSheet] start failed', err);
       onError(message);
     }
   };
@@ -813,10 +815,12 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
   const handleStop = async () => {
     setLocked(false);
     if (status === 'loading-model') {
-      stopRequestedDuringLoadRef.current = true;
+      sessionRef.current += 1;
+      setStatus('idle');
       return;
     }
     if (status !== 'recording') return;
+    const session = sessionRef.current;
     setStatus('transcribing');
     setLevel(0);
     try {
@@ -825,11 +829,15 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
         computeWaveform(blob, 18).catch(() => null),
         decodeAudioTo16kMono(blob)
       ]);
+      if (sessionRef.current !== session) return;
       setWaveform(waveformResult);
       const text = await clientRef.current!.transcribe(samples);
+      if (sessionRef.current !== session) return;
       setStatus('idle');
       onSubmit(text);
-    } catch {
+    } catch (err) {
+      if (sessionRef.current !== session) return;
+      console.error('[VoiceRecordSheet] stop/transcribe failed', err);
       setStatus('idle');
       onError('Não deu pra carregar o reconhecimento de voz, tenta o ditado');
     }
@@ -844,7 +852,11 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
       ref={ref}
       snapPoints={['50%']}
       onClose={() => {
+        sessionRef.current += 1;
         recorderRef.current?.cancel();
+        setStatus('idle');
+        setLocked(false);
+        setLevel(0);
         onClose();
       }}
       onChange={handleSheetChange}
