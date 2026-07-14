@@ -26,6 +26,8 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   } catch {
     // WebGPU unavailable or unsupported — fall back to wasm, mirroring TranscriptionEngine's own fallback.
   }
+  // No dedicated error type here (unlike TranscriptionEngine's ModelLoadError) — a wasm
+  // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
     progress_callback: onProgress

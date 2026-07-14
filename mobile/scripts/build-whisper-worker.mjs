@@ -10,7 +10,7 @@ const outDir = resolve(root, 'public/workers');
 await mkdir(outDir, { recursive: true });
 
 await build({
-  entryPoints: [resolve(__dirname, 'whisper-worker/entry.ts')],
+  entryPoints: [resolve(root, 'src/workers/whisperWorkerEntry.ts')],
   bundle: true,
   minify: true,
   format: 'iife',
