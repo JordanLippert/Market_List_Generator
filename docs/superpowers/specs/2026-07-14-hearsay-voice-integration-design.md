@@ -35,6 +35,17 @@ The user has built a separate open-source library, [hearsay-pwa](https://github.
 
 This is untested with pnpm specifically (the library's README only confirms Bun) — first implementation task validates it actually resolves before building anything on top.
 
+### Metro bundler incompatibility (discovered during implementation)
+
+`@hearsay-pwa/core`'s `TranscriptionEngine.ts` imports `@huggingface/transformers`, which pulls in `onnxruntime-web` as its WASM inference backend. Every browser bundle `onnxruntime-web` ships contains a dynamic import of the form `import(/*webpackIgnore:true*/e)` — a runtime-computed specifier with a webpack-only magic comment telling bundlers not to statically analyze it. Metro (the bundler behind `expo export -p web`) requires `import()`/`require()` specifiers to be static string literals and throws a hard `SyntaxError` on this pattern. This is structural to every distributed build of `onnxruntime-web` (there's a long-open, unresolved upstream issue about it, `microsoft/onnxruntime#22615`) — no Metro resolver config change fixes it; `unstable_enablePackageExports = false` was tried and only moved which `onnxruntime-web` file got hit, not whether the crash happens.
+
+Two consequences for this integration:
+
+1. **`useVoiceCommand` and `TranscriptionEngine` are never imported into the Metro-bundled app.** Both packages' `index.ts` barrels re-export the poisoned chain alongside the safe pieces (`@hearsay-pwa/core`'s barrel exports `AudioRecorder` and `TranscriptionEngine` from the same file; `@hearsay-pwa/react`'s barrel exports `VoiceButton` and `useVoiceCommand` from the same file), and Metro resolves whatever a barrel statically re-exports regardless of what's actually used — so even `import { AudioRecorder } from '@hearsay-pwa/react'` would drag `TranscriptionEngine.ts` into the graph and crash. The app imports `AudioRecorder`, `computeWaveform`, and `VoiceButton` via **deep paths directly into the submodule's source** (bypassing both barrels), and never imports `useVoiceCommand` or `TranscriptionEngine` from the app's own Metro-bundled code at all.
+2. **Transcription runs in a separate Worker, built by esbuild instead of Metro.** esbuild passes the same dynamic-import pattern through untouched at build time (verified: it bundles `@huggingface/transformers` + `onnxruntime-web` without error, and the resulting bundle runs Whisper end-to-end, wasm backend included, inside a classic Worker). The main thread loads it via `new Worker('/workers/whisper-worker.js')` — a plain string literal, which Metro does not statically analyze the way it analyzes `import()`/`require()`. The worker is built by its own esbuild script (mirroring the existing `build:sw` convention) and is **not** added to the Service Worker's precache list — the model weights + ONNX WASM binary it downloads on first use (~21MB) are cached separately by the browser (Cache Storage on the Hugging Face CDN origin), exactly like the existing "Offline behavior" section below already assumed. Adding a payload that size to the SW's install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier in the PWA's history.
+
+One knock-on effect: `TranscriptionEngine.transcribe(blob)` decodes audio via `read_audio()`, which needs `AudioContext` — unavailable inside a Worker. So audio decoding (Blob → 16kHz mono `Float32Array`) happens on the **main thread** before the samples are transferred to the worker; the worker's own transcription logic is a small, deliberately-duplicated mirror of `TranscriptionEngine`'s webgpu→wasm fallback (same model, same language option) that accepts pre-decoded samples directly instead of a `Blob`, since `TranscriptionEngine.transcribe()` itself can't be reused as-is inside a Worker.
+
 ## UI / component design
 
 ### Masthead
@@ -49,13 +60,13 @@ Two mic-family icons, matching the existing history/favorites icon row (`mobile/
 A `Sheet` (reusing the existing `Sheet` component, same as `VoiceCommandSheet`) containing:
 
 - Title + subtitle in the established `AppText` display/mono pattern.
-- A status label (mono, xs, uppercase, muted) reflecting `useVoiceCommand`'s `status`: "segure pra gravar" (idle) / "preparando reconhecimento..." (loading-model) / "gravando — solte pra transcrever" (recording) / "gravando — travado" (locked) / "transcrevendo..." (transcribing).
-- A waveform panel: full-width box, `1.5px solid` ink border, containing a small square recording-state dot + a row of ~18-26 bars (rounded caps, `width: 3.5px`) driven by `useVoiceCommand`'s `level` (live, while recording) and `waveform` (static, once `done`). Bar heights follow a fixed irregular pattern as the idle/rest shape (not flat), animated from `level`/`waveform` values while active.
+- A status label (mono, xs, uppercase, muted) reflecting the sheet's own orchestrated status (see Data flow below): "segure pra gravar" (idle) / "preparando reconhecimento..." (loading-model) / "gravando — solte pra transcrever" (recording) / "gravando — travado" (locked) / "transcrevendo..." (transcribing).
+- A waveform panel: full-width box, `1.5px solid` ink border, containing a small square recording-state dot + a row of ~18-26 bars (rounded caps, `width: 3.5px`) driven by `AudioRecorder`'s live level callback while recording, and `computeWaveform`'s static output once stopped. Bar heights follow a fixed irregular pattern as the idle/rest shape (not flat), animated from those values while active.
 - A lock badge (mono, xs, uppercase, `go` background, `goInk` text, `border-radius: 4`, matching `Button`'s `go` variant chip look) shown only while `VoiceButton`'s `onLockChange` has fired `true`.
 - The record control itself is `VoiceButton` (`mode="press-drag-lock"`) styled as a full-width square-cornered button: `go` background/border when idle, inverted to `ink` background with `go`-colored bars/label when active (recording or locked) — same 4-5-bar glyph as the masthead icon, centered, matching heights `[4,9,7,4]`.
 - Helper caption below the button (mono, xs, muted): "arraste para cima trava sem precisar segurar".
 
-On `useVoiceCommand`'s `status` reaching `"done"`, the transcribed text (`result.text`) is handed to the same submit handler dictation uses (see below), and the sheet closes.
+Once the worker returns a transcript, that text is handed to the same submit handler dictation uses (see below), and the sheet closes.
 
 ### Shared submit handler
 
@@ -63,33 +74,36 @@ On `useVoiceCommand`'s `status` reaching `"done"`, the transcribed text (`result
 
 ### First-download modal
 
-Before the user's first-ever recording attempt, a small modal explains the one-time model download (~40MB, needs internet, cached after that). Shown once, gated by an AsyncStorage flag (`voiceModelDownloadAcknowledged`). Confirming the modal proceeds directly into `useVoiceCommand.start()`. On any later session, the modal is skipped — the `loading-model` status text alone covers the (now rare, e.g. cache evicted) re-download case.
+Before the user's first-ever recording attempt, a small modal explains the one-time model download (~21MB, needs internet, cached after that). Shown once, gated by an AsyncStorage flag (`voiceModelDownloadAcknowledged`). Confirming the modal proceeds directly into the sheet's own `start()` orchestration (below). On any later session, the modal is skipped — the `loading-model` status text alone covers the (now rare, e.g. cache evicted) re-download case.
 
 ### Errors
 
 All surfaced through the existing `Toast` component (same one dictation's flow already uses):
 
-- `MicPermissionError` → "permita o microfone pra gravar" — sheet stays open so the user can retry after granting permission.
-- `ModelLoadError` → "não deu pra carregar o reconhecimento de voz, tenta o ditado" — explicitly points at the dictation fallback; sheet stays open, user closes it manually and taps the other mic icon.
-- `WaveformError` → no toast; the library already degrades `waveform` to `null` internally and the panel simply shows the idle bar pattern.
+- `MicPermissionError` (thrown by `AudioRecorder.start()` directly, caught in `VoiceRecordSheet`) → "permita o microfone pra gravar" — sheet stays open so the user can retry after granting permission.
+- Worker load/transcription failure (posted back as an `{type: "error"}` message, not a thrown `ModelLoadError` instance — see Data flow) → "não deu pra carregar o reconhecimento de voz, tenta o ditado" — explicitly points at the dictation fallback; sheet stays open, user closes it manually and taps the other mic icon.
+- Waveform computation failure → no toast; `computeWaveform` already degrades to `null` internally (unchanged from the library's own behavior) and the panel simply shows the idle bar pattern.
 
-### CommandMatcher bypass
+### No CommandMatcher, no useVoiceCommand
 
-`useVoiceCommand({ intents: [] })` — per the library's now-documented behavior, every result comes back as `{status: "no_match", text}` (or `"no_speech"`), and `result.text` carries the raw transcript regardless. We never touch `CommandMatcher`'s intent/pattern matching; `parseVoiceCommand` is the only matcher in play, same as today.
+The sheet never imports `useVoiceCommand` or `CommandMatcher` at all (not even with `intents: []`) — both are unreachable from Metro-bundled code per the bundler incompatibility above. The sheet orchestrates `AudioRecorder`, `computeWaveform`, its own audio-decode step, and the transcription Worker directly; `parseVoiceCommand` remains the only catalog matcher in play, same as today.
 
 ## Data flow
 
 ```
 user holds VoiceButton
-  -> useVoiceCommand.start()
-       -> TranscriptionEngine.load() (whisper-tiny, first call downloads + caches)
-       -> AudioRecorder.start() (mic capture + live level)
+  -> VoiceRecordSheet.start()
+       -> whisperWorkerClient.preload() (fires model load in the Worker; whisper-tiny, first call downloads + caches)
+       -> AudioRecorder.start() (mic capture + live level) — deep-imported, main thread
 user releases / drags to lock
-  -> useVoiceCommand.stop()
+  -> VoiceRecordSheet.stop()
        -> AudioRecorder.stop() -> Blob
-       -> computeWaveform(blob) + TranscriptionEngine.transcribe(blob) concurrently
-       -> result.text
-  -> Home.handleVoiceSubmit(result.text)
+       -> computeWaveform(blob) (main thread, deep-imported)
+       -> decodeAudioTo16kMono(blob) -> Float32Array (main thread, Web Audio API)
+       -> whisperWorkerClient.transcribe(samples) -> postMessage to Worker, transferable buffer
+            -> Worker: TranscriptionEngine-equivalent load (webgpu -> wasm fallback) + pipeline(samples)
+            -> postMessage back: transcript text, or error
+  -> Home.handleVoiceSubmit(text)
        -> parseVoiceCommand(text, catalog items)
        -> list.toggle(...) per matched item
        -> Toast summary
@@ -101,9 +115,10 @@ Once the whisper-tiny model has been downloaded and cached (transformers.js's ow
 
 ## Testing
 
-- No new pure-function logic is introduced (transcription/matching logic lives in the library and in the already-tested `parseVoiceCommand`), so no new vitest suite is planned.
+- No new vitest suite is planned for the UI wiring — same reasoning as before (matching logic is already covered by `parseVoiceCommand`'s existing tests).
 - UI wiring (`VoiceRecordSheet`, masthead icon, shared submit handler, first-download modal) is verified manually on a real device, matching how the dictation feature's UI-wiring tasks were verified in the prior voice-command-selection work.
-- The pnpm submodule-workspace install itself is validated as the first implementation task (`pnpm install` resolving `@hearsay-pwa/react` correctly) before any component work starts.
+- The pnpm submodule-workspace install and the Metro-safe deep-import pattern are validated as the first implementation task, before any component work starts.
+- The transcription Worker has its own build+verify step, independent of the main app's `typecheck`/`build:web` — esbuild bundling it successfully is the syntax check; Metro never parses this file at all, so it's the only piece of this feature that main-app verification can't catch mistakes in.
 
 ## Branching
 
