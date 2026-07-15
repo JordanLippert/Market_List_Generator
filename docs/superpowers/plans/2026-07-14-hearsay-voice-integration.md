@@ -1072,7 +1072,50 @@ git commit -m "feat(mobile): add voice-record icon to Masthead"
 **Files:**
 - Modify: `mobile/src/ui/screens/Home/index.tsx`
 
-Reuses the existing `handleVoiceSubmit` (no duplicated matching logic) and the existing `Toast` for errors.
+Reuses the existing `handleVoiceSubmit` (no duplicated matching logic) and the existing `Toast` for errors. `handleVoiceSubmit` needs a small signature change first — it used to hardcode `voiceRef.current?.close()`, which only ever made sense while `VoiceCommandSheet` was its only caller; passing that same function to `VoiceRecordSheet` unchanged would mean the new sheet never closes itself after a successful (or no-match) submission, since it'd keep closing the *other* sheet's ref instead. The fix parameterizes which ref to close, keeping the matching/toggle/toast logic itself shared and unduplicated (the actual thing that must not be repeated).
+
+- [ ] **Step 0: Parameterize `handleVoiceSubmit`'s sheet-close call**
+
+Add `type RefObject` to the existing React import at the top of the file — change:
+```tsx
+import React, { useMemo, useRef, useState } from 'react';
+```
+to:
+```tsx
+import React, { useMemo, useRef, useState, type RefObject } from 'react';
+```
+
+Then change `handleVoiceSubmit`'s signature and its close call:
+```tsx
+  const handleVoiceSubmit = (text: string) => {
+    const { matched } = parseVoiceCommand(text, getItems());
+    const added: string[] = [];
+
+    for (const item of matched) {
+      if (list.isSelected(item.id)) continue;
+      const variationLabel = item.variations.length > 0 ? item.variations[0].label : undefined;
+      list.toggle(item.id, variationLabel);
+      added.push(item.name);
+    }
+
+    voiceRef.current?.close();
+```
+to:
+```tsx
+  const handleVoiceSubmit = (text: string, sheetRef: RefObject<BottomSheet | null>) => {
+    const { matched } = parseVoiceCommand(text, getItems());
+    const added: string[] = [];
+
+    for (const item of matched) {
+      if (list.isSelected(item.id)) continue;
+      const variationLabel = item.variations.length > 0 ? item.variations[0].label : undefined;
+      list.toggle(item.id, variationLabel);
+      added.push(item.name);
+    }
+
+    sheetRef.current?.close();
+```
+(the rest of the function body — the toast messages — is unchanged).
 
 - [ ] **Step 1: Add the import**
 
@@ -1132,12 +1175,12 @@ to:
 ```tsx
       <VoiceCommandSheet
         ref={voiceRef}
-        onSubmit={handleVoiceSubmit}
+        onSubmit={(text) => handleVoiceSubmit(text, voiceRef)}
         onClose={() => voiceRef.current?.close()}
       />
       <VoiceRecordSheet
         ref={voiceRecordRef}
-        onSubmit={handleVoiceSubmit}
+        onSubmit={(text) => handleVoiceSubmit(text, voiceRecordRef)}
         onClose={() => voiceRecordRef.current?.close()}
         onError={(message) => setToastMessage(message)}
       />
@@ -1189,7 +1232,7 @@ vercel
 
 On an iOS Safari (and, if available, Android Chrome) device, added to the home screen as a PWA:
 - [ ] Mic permission prompt appears on first recording attempt; denying it shows the "permita o microfone" toast and the sheet stays open.
-- [ ] Press-and-hold shows "preparando reconhecimento..." briefly, then records with the waveform animating; releasing stops and transcribes; matched items get added with the usual toast.
+- [ ] Press-and-hold shows "preparando reconhecimento..." briefly, then records with the waveform animating; releasing stops and transcribes; matched items get added with the usual toast, **and the sheet itself closes** (not just the dictation sheet — both sheets must dismiss themselves after their own submission).
 - [ ] Releasing very quickly during "preparando reconhecimento..." (before recording actually starts) does not crash or produce an empty-transcript attempt — it just cancels back to idle.
 - [ ] Press-and-drag-up locks; the "travado ×" badge appears and tapping it stops the recording.
 - [ ] First-download modal only appears once; after confirming, later recordings skip straight to the brief `loading-model` → `recording` flow.

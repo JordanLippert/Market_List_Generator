@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, type RefObject } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type BottomSheet from '@gorhom/bottom-sheet';
@@ -79,7 +79,7 @@ export function HomeScreen() {
     }
   };
 
-  const handleVoiceSubmit = (text: string) => {
+  const handleVoiceSubmit = (text: string, sheetRef: RefObject<BottomSheet | null>) => {
     const { matched } = parseVoiceCommand(text, getItems());
     const added: string[] = [];
 
@@ -90,7 +90,7 @@ export function HomeScreen() {
       added.push(item.name);
     }
 
-    voiceRef.current?.close();
+    sheetRef.current?.close();
 
     if (added.length === 0) {
       setToastMessage(
@@ -162,12 +162,12 @@ export function HomeScreen() {
       />
       <VoiceCommandSheet
         ref={voiceRef}
-        onSubmit={handleVoiceSubmit}
+        onSubmit={(text) => handleVoiceSubmit(text, voiceRef)}
         onClose={() => voiceRef.current?.close()}
       />
       <VoiceRecordSheet
         ref={voiceRecordRef}
-        onSubmit={handleVoiceSubmit}
+        onSubmit={(text) => handleVoiceSubmit(text, voiceRecordRef)}
         onClose={() => voiceRecordRef.current?.close()}
         onError={(message) => setToastMessage(message)}
       />

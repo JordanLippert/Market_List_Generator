@@ -79,7 +79,7 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoi
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Gravar comando de voz"
+            accessibilityLabel="Gravar por voz"
             hitSlop={12}
             onPress={() => {
               haptics.light();
