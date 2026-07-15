@@ -14,6 +14,7 @@ import { groupItemsByCategory, getItems } from '@app/lib/catalog';
 import { useList } from '@app/contexts/ListContext';
 import type { Item } from '@app/types/catalog';
 import { VoiceCommandSheet } from '@ui/components/VoiceCommandSheet';
+import { VoiceRecordSheet } from '@ui/components/VoiceRecordSheet';
 import { Toast } from '@ui/components/Toast';
 import { parseVoiceCommand } from '@app/lib/voiceCommand';
 
@@ -27,6 +28,7 @@ export function HomeScreen() {
   const historyRef = useRef<BottomSheet>(null);
   const favoritesRef = useRef<BottomSheet>(null);
   const voiceRef = useRef<BottomSheet>(null);
+  const voiceRecordRef = useRef<BottomSheet>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const groups = useMemo(() => groupItemsByCategory(), []);
@@ -110,6 +112,7 @@ export function HomeScreen() {
           onOpenHistory={() => historyRef.current?.expand()}
           onOpenFavorites={() => favoritesRef.current?.expand()}
           onOpenVoice={() => voiceRef.current?.expand()}
+          onOpenVoiceRecord={() => voiceRecordRef.current?.expand()}
         />
         <SearchBar value={query} onChangeText={setQuery} />
         {filteredGroups.map((g) => {
@@ -161,6 +164,12 @@ export function HomeScreen() {
         ref={voiceRef}
         onSubmit={handleVoiceSubmit}
         onClose={() => voiceRef.current?.close()}
+      />
+      <VoiceRecordSheet
+        ref={voiceRecordRef}
+        onSubmit={handleVoiceSubmit}
+        onClose={() => voiceRecordRef.current?.close()}
+        onError={(message) => setToastMessage(message)}
       />
       <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </View>
