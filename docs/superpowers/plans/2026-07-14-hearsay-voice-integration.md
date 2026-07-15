@@ -384,7 +384,7 @@ interface ProgressPayload {
 
 type Transcriber = (
   audio: Float32Array,
-  options?: { language?: string; task?: string }
+  options?: { language?: string; task?: string; no_repeat_ngram_size?: number }
 ) => Promise<{ text: string }>;
 
 // whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
@@ -438,7 +438,12 @@ self.onmessage = async (event: MessageEvent) => {
     const samples = event.data.payload as Float32Array;
     try {
       const engine = await loadTranscriber((p) => postMessage({ type: 'progress', payload: p }));
-      const output = await engine(samples, { language: LANGUAGE, task: 'transcribe' });
+      // Silence-padded audio (Whisper always processes a fixed 30s window internally,
+      // regardless of actual recording length) can make the model hallucinate the same
+      // nonsense n-gram on loop indefinitely once it runs out of real speech to anchor
+      // on. no_repeat_ngram_size doesn't fix the hallucination itself, but it forces the
+      // model to stop repeating identical text once it's already said it once.
+      const output = await engine(samples, { language: LANGUAGE, task: 'transcribe', no_repeat_ngram_size: 3 });
       postMessage({ type: 'transcript', payload: output.text.trim() });
     } catch (err) {
       postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
@@ -727,6 +732,8 @@ A separate, real-device-caught bug: `AudioRecorder.stop()`/`cancel()` (in the ve
 `handleStop`'s success path also logs the raw transcript (`console.log('[VoiceRecordSheet] transcript:', text)`) before handing it to `parseVoiceCommand`. Added during real-device verification to tell apart a matcher bug from a Whisper transcription-accuracy miss (confirmed via this log that `whisper-tiny` occasionally mishears a word — e.g. "chia" as "ixia" — while `parseVoiceCommand` correctly matches whatever text it actually receives; not a code bug). Kept permanently, not just for that one investigation — console-only, nothing user-visible, and it's the fastest way to diagnose a future "didn't recognize my item" report without re-instrumenting.
 
 Follow-up from that same log: a few real-device tries with longer, more natural phrases came back badly garbled (not just one missed word — whole invented words, nonsense phrasing), which was more than "expected small-model noise." Confirmed via the log again, then switched the worker's model to `whisper-base` with `dtype: 'q8'` forced on both backends (see Task 6, Step 2) — see that task for the reasoning and the size tradeoff.
+
+One more real-device finding via that same log, after the model switch: one recording came back as a long block of nonsense (mixed-script garbage tokens) repeating identically many times in a row. This is a known Whisper failure mode — it always processes a fixed 30-second window internally regardless of actual recording length, so trailing silence after the user stops talking but before releasing the button gets padded into that window, and once the model runs out of real speech to anchor on it can start hallucinating and loop on the same n-gram indefinitely. `no_repeat_ngram_size: 3` is now passed to the transcribe call (Task 6, Step 2) — confirmed via Context7 that transformers.js's ASR pipeline forwards arbitrary generation kwargs straight to the underlying `model.generate()` call, so this is a real, supported option, not a guess. It doesn't stop the hallucination itself, only caps the damage by forcing the model to stop repeating text it's already generated — trimming trailing silence before transcribing would address the root cause but wasn't implemented (out of scope for this pass).
 
 - [ ] **Step 1: Replace the stub with the full component**
 

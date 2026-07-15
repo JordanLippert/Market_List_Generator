@@ -16,7 +16,7 @@ interface ProgressPayload {
 
 type Transcriber = (
   audio: Float32Array,
-  options?: { language?: string; task?: string }
+  options?: { language?: string; task?: string; no_repeat_ngram_size?: number }
 ) => Promise<{ text: string }>;
 
 // whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
@@ -70,7 +70,12 @@ self.onmessage = async (event: MessageEvent) => {
     const samples = event.data.payload as Float32Array;
     try {
       const engine = await loadTranscriber((p) => postMessage({ type: 'progress', payload: p }));
-      const output = await engine(samples, { language: LANGUAGE, task: 'transcribe' });
+      // Silence-padded audio (Whisper always processes a fixed 30s window internally,
+      // regardless of actual recording length) can make the model hallucinate the same
+      // nonsense n-gram on loop indefinitely once it runs out of real speech to anchor
+      // on. no_repeat_ngram_size doesn't fix the hallucination itself, but it forces the
+      // model to stop repeating identical text once it's already said it once.
+      const output = await engine(samples, { language: LANGUAGE, task: 'transcribe', no_repeat_ngram_size: 3 });
       postMessage({ type: 'transcript', payload: output.text.trim() });
     } catch (err) {
       postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
