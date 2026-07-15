@@ -17,7 +17,7 @@ export function FirstDownloadModal({ visible, onConfirm, onCancel }: FirstDownlo
         <View style={styles.card}>
           <AppText family="display" size="lg" color="ink">Primeiro uso</AppText>
           <AppText family="mono" size="xs" color="muted" style={styles.body}>
-            vamos baixar ~21mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
+            vamos baixar ~80mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
           </AppText>
           <View style={styles.actions}>
             <Button label="Agora não" variant="ghostDark" onPress={onCancel} style={styles.actionBtn} />

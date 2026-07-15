@@ -88,7 +88,7 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoi
             style={styles.iconBtn}
           >
             <View style={styles.waveIconRow}>
-              {[3, 7, 5, 3].map((h, idx) => (
+              {[3, 8, 13, 6, 13, 8, 3].map((h, idx) => (
                 <View key={idx} style={[styles.waveIconBar, { height: h }]} />
               ))}
             </View>
@@ -124,5 +124,5 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   waveIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1.5, height: 18 },
-  waveIconBar: { width: 2.5, backgroundColor: theme.colors.ink }
+  waveIconBar: { width: 2.2, borderRadius: 1, backgroundColor: theme.colors.ink }
 });

@@ -387,7 +387,14 @@ type Transcriber = (
   options?: { language?: string; task?: string }
 ) => Promise<{ text: string }>;
 
-const MODEL = 'onnx-community/whisper-tiny';
+// whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
+// phrases garbled, not just an occasional missed word) -- whisper-base is
+// meaningfully more accurate. dtype: 'q8' is forced explicitly on both
+// backends so the download stays the smaller quantized checkpoint regardless
+// of device -- wasm already defaulted to q8 on its own, but webgpu defaulted
+// to the much larger unquantized fp32 checkpoint unless told otherwise.
+const MODEL = 'onnx-community/whisper-base';
+const DTYPE = 'q8';
 const LANGUAGE = 'portuguese';
 
 let transcriber: Transcriber | null = null;
@@ -397,6 +404,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   try {
     transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
+      dtype: DTYPE,
       progress_callback: onProgress
     })) as unknown as Transcriber;
     return transcriber;
@@ -407,6 +415,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
+    dtype: DTYPE,
     progress_callback: onProgress
   })) as unknown as Transcriber;
   return transcriber;
@@ -465,7 +474,7 @@ await build({
   logLevel: 'info'
 });
 ```
-This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — a ~21MB payload in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
+This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — an ~80MB payload (whisper-base, q8 quantized — see the model choice note in Step 2 below) in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
 
 - [ ] **Step 4: Wire it into the build pipeline and verify**
 
@@ -656,7 +665,7 @@ export function FirstDownloadModal({ visible, onConfirm, onCancel }: FirstDownlo
         <View style={styles.card}>
           <AppText family="display" size="lg" color="ink">Primeiro uso</AppText>
           <AppText family="mono" size="xs" color="muted" style={styles.body}>
-            vamos baixar ~21mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
+            vamos baixar ~80mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
           </AppText>
           <View style={styles.actions}>
             <Button label="Agora não" variant="ghostDark" onPress={onCancel} style={styles.actionBtn} />
@@ -716,6 +725,8 @@ Uses a monotonic `sessionRef` counter (not a boolean flag) to guard every async 
 A separate, real-device-caught bug: `AudioRecorder.stop()`/`cancel()` (in the vendored submodule) never clear their internal `mediaRecorder` field — only `releaseStream()`'s effects (stopping tracks) run. This means after any failed recording attempt (e.g. a too-short recording whose blob fails to decode), the *same* `AudioRecorder` instance's `mediaRecorder.state` reference sticks around, and every later `start()` call throws `"AudioRecorder.start() called while already recording"` forever — the feature becomes permanently unusable after one failure, with no way to recover short of reloading the page. This is a genuine defect in the vendored library, not something worth patching in the submodule checkout directly (that's a separate repo, changes there don't persist across `git submodule update`) — worked around entirely within this file instead: `handleStart` allocates a **fresh `AudioRecorder` instance every attempt**, right before calling `.start()`, so a previous attempt's stuck internal state can never gate a new one. Worth reporting upstream to `hearsay-pwa` (nulling `this.mediaRecorder = null` at the end of `stop()`/`cancel()` would fix it at the source), but out of scope for this branch.
 
 `handleStop`'s success path also logs the raw transcript (`console.log('[VoiceRecordSheet] transcript:', text)`) before handing it to `parseVoiceCommand`. Added during real-device verification to tell apart a matcher bug from a Whisper transcription-accuracy miss (confirmed via this log that `whisper-tiny` occasionally mishears a word — e.g. "chia" as "ixia" — while `parseVoiceCommand` correctly matches whatever text it actually receives; not a code bug). Kept permanently, not just for that one investigation — console-only, nothing user-visible, and it's the fastest way to diagnose a future "didn't recognize my item" report without re-instrumenting.
+
+Follow-up from that same log: a few real-device tries with longer, more natural phrases came back badly garbled (not just one missed word — whole invented words, nonsense phrasing), which was more than "expected small-model noise." Confirmed via the log again, then switched the worker's model to `whisper-base` with `dtype: 'q8'` forced on both backends (see Task 6, Step 2) — see that task for the reasoning and the size tradeoff.
 
 - [ ] **Step 1: Replace the stub with the full component**
 
@@ -1047,20 +1058,20 @@ Immediately after the existing "Adicionar por voz" `Pressable` (the one with `<F
             style={styles.iconBtn}
           >
             <View style={styles.waveIconRow}>
-              {[3, 7, 5, 3].map((h, idx) => (
+              {[3, 8, 13, 6, 13, 8, 3].map((h, idx) => (
                 <View key={idx} style={[styles.waveIconBar, { height: h }]} />
               ))}
             </View>
           </Pressable>
 ```
-(An earlier version of this step used a bespoke `waveIconBtn` style with `borderRadius: 4` and a fixed 30×30 box — caught in real-device testing as visually inconsistent with its siblings, which are sharp-cornered and sized by padding, not a fixed box. Reusing `iconBtn` directly fixes that. A second round of real-device testing then caught the bars themselves looking wrong inside the reused `iconBtn` box: `iconBtn`'s Pressable has no `alignItems`/`justifyContent` of its own — fine for a Feather icon, which has explicit intrinsic width/height and isn't affected by flexbox's default cross-axis stretch, but `waveIconRow` has neither, so it stretched to the parent's full content width and left its 4 bars clustered at the flex-start edge instead of centered. Fixed with `justifyContent: 'center'` and an explicit `height: 18` on `waveIconRow` (matching the sibling icons' `size={18}` exactly) and by dropping `borderRadius` on the 2px-ish-wide bars, which was rounding them into a blurry-looking smudge at that size rather than crisp bars.)
+(An earlier version of this step used a bespoke `waveIconBtn` style with `borderRadius: 4` and a fixed 30×30 box — caught in real-device testing as visually inconsistent with its siblings, which are sharp-cornered and sized by padding, not a fixed box. Reusing `iconBtn` directly fixes that. A second round of real-device testing then caught the bars themselves looking wrong inside the reused `iconBtn` box: `iconBtn`'s Pressable has no `alignItems`/`justifyContent` of its own — fine for a Feather icon, which has explicit intrinsic width/height and isn't affected by flexbox's default cross-axis stretch, but `waveIconRow` has neither, so it stretched to the parent's full content width and left its 4 bars clustered at the flex-start edge instead of centered. Fixed with `justifyContent: 'center'` and an explicit `height: 18` on `waveIconRow` (matching the sibling icons' `size={18}` exactly) and by dropping `borderRadius` on the 2px-ish-wide bars, which was rounding them into a blurry-looking smudge at that size rather than crisp bars. A third round asked for the wave itself to look more like a real waveform — went from 4 short bars to 7, with a taller double-peak profile, and brought a small `borderRadius` back now that the bars are wide/tall enough for it to read as a rounded cap instead of a smudge.)
 
 - [ ] **Step 3: Add the new styles**
 
 In the `StyleSheet.create` call at the bottom of the file, add after `iconBtn`:
 ```ts
   waveIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1.5, height: 18 },
-  waveIconBar: { width: 2.5, backgroundColor: theme.colors.ink }
+  waveIconBar: { width: 2.2, borderRadius: 1, backgroundColor: theme.colors.ink }
 ```
 
 - [ ] **Step 4: Verify it typechecks**

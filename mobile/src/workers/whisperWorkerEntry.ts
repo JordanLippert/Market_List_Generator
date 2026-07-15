@@ -19,7 +19,14 @@ type Transcriber = (
   options?: { language?: string; task?: string }
 ) => Promise<{ text: string }>;
 
-const MODEL = 'onnx-community/whisper-tiny';
+// whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
+// phrases garbled, not just an occasional missed word) -- whisper-base is
+// meaningfully more accurate. dtype: 'q8' is forced explicitly on both
+// backends so the download stays the smaller quantized checkpoint regardless
+// of device -- wasm already defaulted to q8 on its own, but webgpu defaulted
+// to the much larger unquantized fp32 checkpoint unless told otherwise.
+const MODEL = 'onnx-community/whisper-base';
+const DTYPE = 'q8';
 const LANGUAGE = 'portuguese';
 
 let transcriber: Transcriber | null = null;
@@ -29,6 +36,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   try {
     transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
+      dtype: DTYPE,
       progress_callback: onProgress
     })) as unknown as Transcriber;
     return transcriber;
@@ -39,6 +47,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
+    dtype: DTYPE,
     progress_callback: onProgress
   })) as unknown as Transcriber;
   return transcriber;

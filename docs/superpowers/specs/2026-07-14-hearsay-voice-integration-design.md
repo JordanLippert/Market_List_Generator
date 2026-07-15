@@ -42,7 +42,7 @@ This is untested with pnpm specifically (the library's README only confirms Bun)
 Two consequences for this integration:
 
 1. **`useVoiceCommand` and `TranscriptionEngine` are never imported into the Metro-bundled app.** Both packages' `index.ts` barrels re-export the poisoned chain alongside the safe pieces (`@hearsay-pwa/core`'s barrel exports `AudioRecorder` and `TranscriptionEngine` from the same file; `@hearsay-pwa/react`'s barrel exports `VoiceButton` and `useVoiceCommand` from the same file), and Metro resolves whatever a barrel statically re-exports regardless of what's actually used — so even `import { AudioRecorder } from '@hearsay-pwa/react'` would drag `TranscriptionEngine.ts` into the graph and crash. The app imports `AudioRecorder`, `computeWaveform`, and `VoiceButton` via **deep paths directly into the submodule's source** (bypassing both barrels), and never imports `useVoiceCommand` or `TranscriptionEngine` from the app's own Metro-bundled code at all.
-2. **Transcription runs in a separate Worker, built by esbuild instead of Metro.** esbuild passes the same dynamic-import pattern through untouched at build time (verified: it bundles `@huggingface/transformers` + `onnxruntime-web` without error, and the resulting bundle runs Whisper end-to-end, wasm backend included, inside a classic Worker). The main thread loads it via `new Worker('/workers/whisper-worker.js')` — a plain string literal, which Metro does not statically analyze the way it analyzes `import()`/`require()`. The worker is built by its own esbuild script (mirroring the existing `build:sw` convention) and is **not** added to the Service Worker's precache list — the model weights + ONNX WASM binary it downloads on first use (~21MB) are cached separately by the browser (Cache Storage on the Hugging Face CDN origin), exactly like the existing "Offline behavior" section below already assumed. Adding a payload that size to the SW's install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier in the PWA's history.
+2. **Transcription runs in a separate Worker, built by esbuild instead of Metro.** esbuild passes the same dynamic-import pattern through untouched at build time (verified: it bundles `@huggingface/transformers` + `onnxruntime-web` without error, and the resulting bundle runs Whisper end-to-end, wasm backend included, inside a classic Worker). The main thread loads it via `new Worker('/workers/whisper-worker.js')` — a plain string literal, which Metro does not statically analyze the way it analyzes `import()`/`require()`. The worker is built by its own esbuild script (mirroring the existing `build:sw` convention) and is **not** added to the Service Worker's precache list — the model weights + ONNX WASM binary it downloads on first use (~80MB — see the model choice note below) are cached separately by the browser (Cache Storage on the Hugging Face CDN origin), exactly like the existing "Offline behavior" section below already assumed. Adding a payload that size to the SW's install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier in the PWA's history.
 
 One knock-on effect: `TranscriptionEngine.transcribe(blob)` decodes audio via `read_audio()`, which needs `AudioContext` — unavailable inside a Worker. So audio decoding (Blob → 16kHz mono `Float32Array`) happens on the **main thread** before the samples are transferred to the worker; the worker's own transcription logic is a small, deliberately-duplicated mirror of `TranscriptionEngine`'s webgpu→wasm fallback (same model, same language option) that accepts pre-decoded samples directly instead of a `Blob`, since `TranscriptionEngine.transcribe()` itself can't be reused as-is inside a Worker.
 
@@ -74,7 +74,7 @@ Once the worker returns a transcript, that text is handed to the same submit han
 
 ### First-download modal
 
-Before the user's first-ever recording attempt, a small modal explains the one-time model download (~21MB, needs internet, cached after that). Shown once, gated by an AsyncStorage flag (`voiceModelDownloadAcknowledged`). Confirming the modal proceeds directly into the sheet's own `start()` orchestration (below). On any later session, the modal is skipped — the `loading-model` status text alone covers the (now rare, e.g. cache evicted) re-download case.
+Before the user's first-ever recording attempt, a small modal explains the one-time model download (~80MB, needs internet, cached after that). Shown once, gated by an AsyncStorage flag (`voiceModelDownloadAcknowledged`). Confirming the modal proceeds directly into the sheet's own `start()` orchestration (below). On any later session, the modal is skipped — the `loading-model` status text alone covers the (now rare, e.g. cache evicted) re-download case.
 
 ### Errors
 
@@ -93,7 +93,7 @@ The sheet never imports `useVoiceCommand` or `CommandMatcher` at all (not even w
 ```
 user holds VoiceButton
   -> VoiceRecordSheet.start()
-       -> whisperWorkerClient.preload() (fires model load in the Worker; whisper-tiny, first call downloads + caches)
+       -> whisperWorkerClient.preload() (fires model load in the Worker; whisper-base q8, first call downloads + caches)
        -> AudioRecorder.start() (mic capture + live level) — deep-imported, main thread
 user releases / drags to lock
   -> VoiceRecordSheet.stop()
@@ -111,7 +111,11 @@ user releases / drags to lock
 
 ## Offline behavior
 
-Once the whisper-tiny model has been downloaded and cached (transformers.js's own Cache Storage usage, on the Hugging Face CDN origin — separate from our app's own Service Worker scope and precache list), recording + transcription is expected to keep working fully offline, consistent with the rest of the PWA. This is an assumption carried over from how transformers.js caching is documented to work, not yet verified against Pracomprá's specific SW setup — real-device offline verification is a required manual task before merge, same as every other offline claim made during the earlier PWA-offline work.
+Once the whisper-base model has been downloaded and cached (transformers.js's own Cache Storage usage, on the Hugging Face CDN origin — separate from our app's own Service Worker scope and precache list), recording + transcription is expected to keep working fully offline, consistent with the rest of the PWA. This is an assumption carried over from how transformers.js caching is documented to work, not yet verified against Pracomprá's specific SW setup — real-device offline verification is a required manual task before merge, same as every other offline claim made during the earlier PWA-offline work.
+
+### Model choice (revised during implementation)
+
+The original plan used `whisper-tiny` (smallest, fastest download). Real-device testing showed its Portuguese accuracy wasn't just occasional single-word misses (acceptable, expected) but whole phrases coming out garbled — worse than useful. Switched to `whisper-base` with `dtype: "q8"` forced explicitly on both the webgpu and wasm code paths in the transcription Worker: the wasm path already defaulted to the smaller `q8` quantized checkpoint on its own, but webgpu defaulted to the much larger unquantized `fp32` one unless told otherwise, so forcing `q8` on both keeps the download consistent regardless of which backend a given device ends up using. Net effect: a meaningfully more accurate model at a download size closer to what an unquantized `tiny` would have cost, not a full `tiny`→`base` size jump. The `~80MB` estimate is the one-time download shown in the first-use modal — it is not re-downloaded once cached.
 
 ## Testing
 
