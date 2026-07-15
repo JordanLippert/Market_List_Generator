@@ -1042,14 +1042,14 @@ Immediately after the existing "Adicionar por voz" `Pressable` (the one with `<F
             </View>
           </Pressable>
 ```
-(An earlier version of this step used a bespoke `waveIconBtn` style with `borderRadius: 4` and a fixed 30×30 box — caught in real-device testing as visually inconsistent with its siblings, which are sharp-cornered and sized by padding, not a fixed box. Reusing `iconBtn` directly fixes that.)
+(An earlier version of this step used a bespoke `waveIconBtn` style with `borderRadius: 4` and a fixed 30×30 box — caught in real-device testing as visually inconsistent with its siblings, which are sharp-cornered and sized by padding, not a fixed box. Reusing `iconBtn` directly fixes that. A second round of real-device testing then caught the bars themselves looking wrong inside the reused `iconBtn` box: `iconBtn`'s Pressable has no `alignItems`/`justifyContent` of its own — fine for a Feather icon, which has explicit intrinsic width/height and isn't affected by flexbox's default cross-axis stretch, but `waveIconRow` has neither, so it stretched to the parent's full content width and left its 4 bars clustered at the flex-start edge instead of centered. Fixed with `justifyContent: 'center'` and an explicit `height: 18` on `waveIconRow` (matching the sibling icons' `size={18}` exactly) and by dropping `borderRadius` on the 2px-ish-wide bars, which was rounding them into a blurry-looking smudge at that size rather than crisp bars.)
 
 - [ ] **Step 3: Add the new styles**
 
 In the `StyleSheet.create` call at the bottom of the file, add after `iconBtn`:
 ```ts
-  waveIconRow: { flexDirection: 'row', alignItems: 'center', gap: 1.5 },
-  waveIconBar: { width: 2, borderRadius: 1, backgroundColor: theme.colors.ink }
+  waveIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1.5, height: 18 },
+  waveIconBar: { width: 2.5, backgroundColor: theme.colors.ink }
 ```
 
 - [ ] **Step 4: Verify it typechecks**

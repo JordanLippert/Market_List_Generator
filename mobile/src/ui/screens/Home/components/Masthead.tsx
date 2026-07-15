@@ -123,6 +123,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6
   },
-  waveIconRow: { flexDirection: 'row', alignItems: 'center', gap: 1.5 },
-  waveIconBar: { width: 2, borderRadius: 1, backgroundColor: theme.colors.ink }
+  waveIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1.5, height: 18 },
+  waveIconBar: { width: 2.5, backgroundColor: theme.colors.ink }
 });
