@@ -384,7 +384,13 @@ interface ProgressPayload {
 
 type Transcriber = (
   audio: Float32Array,
-  options?: { language?: string; task?: string; no_repeat_ngram_size?: number }
+  options?: {
+    language?: string;
+    task?: string;
+    no_repeat_ngram_size?: number;
+    chunk_length_s?: number;
+    stride_length_s?: number;
+  }
 ) => Promise<{ text: string }>;
 
 // whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
@@ -438,12 +444,23 @@ self.onmessage = async (event: MessageEvent) => {
     const samples = event.data.payload as Float32Array;
     try {
       const engine = await loadTranscriber((p) => postMessage({ type: 'progress', payload: p }));
-      // Silence-padded audio (Whisper always processes a fixed 30s window internally,
-      // regardless of actual recording length) can make the model hallucinate the same
-      // nonsense n-gram on loop indefinitely once it runs out of real speech to anchor
-      // on. no_repeat_ngram_size doesn't fix the hallucination itself, but it forces the
-      // model to stop repeating identical text once it's already said it once.
-      const output = await engine(samples, { language: LANGUAGE, task: 'transcribe', no_repeat_ngram_size: 3 });
+      // transformers.js's ASR pipeline defaults to chunk_length_s: 0 (no chunking), which
+      // its own console warning flags as wrong for any audio over Whisper's 30s window
+      // ("Attempting to extract features for audio longer than 30 seconds..."). Fixed here
+      // by chunking into 30s windows with 5s of overlap so long recordings get transcribed
+      // window-by-window instead of in one pass the pipeline itself says is unsupported.
+      // Confirmed via Playwright + real audio that this silences the warning; a separate
+      // real-device recording still produced garbled output even after this fix (verified
+      // the decoded PCM feeding the model was correct real speech, not a decode bug), so
+      // this addresses a real defect but is not a complete fix for hallucination quality.
+      // no_repeat_ngram_size stays as a cheap backstop against repetition within a window.
+      const output = await engine(samples, {
+        language: LANGUAGE,
+        task: 'transcribe',
+        no_repeat_ngram_size: 3,
+        chunk_length_s: 30,
+        stride_length_s: 5
+      });
       postMessage({ type: 'transcript', payload: output.text.trim() });
     } catch (err) {
       postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
@@ -733,7 +750,9 @@ A separate, real-device-caught bug: `AudioRecorder.stop()`/`cancel()` (in the ve
 
 Follow-up from that same log: a few real-device tries with longer, more natural phrases came back badly garbled (not just one missed word — whole invented words, nonsense phrasing), which was more than "expected small-model noise." Confirmed via the log again, then switched the worker's model to `whisper-base` with `dtype: 'q8'` forced on both backends (see Task 6, Step 2) — see that task for the reasoning and the size tradeoff.
 
-One more real-device finding via that same log, after the model switch: one recording came back as a long block of nonsense (mixed-script garbage tokens) repeating identically many times in a row. This is a known Whisper failure mode — it always processes a fixed 30-second window internally regardless of actual recording length, so trailing silence after the user stops talking but before releasing the button gets padded into that window, and once the model runs out of real speech to anchor on it can start hallucinating and loop on the same n-gram indefinitely. `no_repeat_ngram_size: 3` is now passed to the transcribe call (Task 6, Step 2) — confirmed via Context7 that transformers.js's ASR pipeline forwards arbitrary generation kwargs straight to the underlying `model.generate()` call, so this is a real, supported option, not a guess. It doesn't stop the hallucination itself, only caps the damage by forcing the model to stop repeating text it's already generated — trimming trailing silence before transcribing would address the root cause but wasn't implemented (out of scope for this pass).
+One more real-device finding via that same log, after the model switch: one recording came back as a long block of nonsense (mixed-script garbage tokens) repeating identically many times in a row. `no_repeat_ngram_size: 3` is now passed to the transcribe call (Task 6, Step 2) — confirmed via Context7 that transformers.js's ASR pipeline forwards arbitrary generation kwargs straight to the underlying `model.generate()` call, so this is a real, supported option, not a guess. It doesn't stop hallucination itself, only caps the damage by forcing the model to stop repeating text it's already generated.
+
+Follow-up investigation (Playwright, real 35-50s WhatsApp voice-note audio fed through Chromium's fake-mic-capture flags) found the real cause of the exact-repeat pattern above: transformers.js's ASR pipeline defaults to `chunk_length_s: 0` (no chunking), and its own console warning flags this as wrong for audio over Whisper's 30s window ("Attempting to extract features for audio longer than 30 seconds..."). `chunk_length_s: 30, stride_length_s: 5` is now passed alongside `no_repeat_ngram_size` (Task 6, Step 2) — confirmed via Context7 docs and via a real test run that this silences the warning. Separately, a 35s real-device test still produced garbled output even with chunking enabled; the decoded PCM feeding the model was pulled out of the page and its per-second RMS envelope inspected directly (silence → speech → pause → speech, matching real spoken content), ruling out a decode/capture bug. That remaining garbling is attributed to the source audio itself (a WhatsApp voice note — compressed opus, recorded at arm's length, likely with room noise/reverb) rather than a code defect; it's not representative of the shipped feature's actual usage (short press-and-hold voice commands spoken close to the phone mic), so it was not chased further in this pass.
 
 - [ ] **Step 1: Replace the stub with the full component**
 

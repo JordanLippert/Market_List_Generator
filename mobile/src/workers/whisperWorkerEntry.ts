@@ -16,7 +16,13 @@ interface ProgressPayload {
 
 type Transcriber = (
   audio: Float32Array,
-  options?: { language?: string; task?: string; no_repeat_ngram_size?: number }
+  options?: {
+    language?: string;
+    task?: string;
+    no_repeat_ngram_size?: number;
+    chunk_length_s?: number;
+    stride_length_s?: number;
+  }
 ) => Promise<{ text: string }>;
 
 // whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
@@ -70,12 +76,23 @@ self.onmessage = async (event: MessageEvent) => {
     const samples = event.data.payload as Float32Array;
     try {
       const engine = await loadTranscriber((p) => postMessage({ type: 'progress', payload: p }));
-      // Silence-padded audio (Whisper always processes a fixed 30s window internally,
-      // regardless of actual recording length) can make the model hallucinate the same
-      // nonsense n-gram on loop indefinitely once it runs out of real speech to anchor
-      // on. no_repeat_ngram_size doesn't fix the hallucination itself, but it forces the
-      // model to stop repeating identical text once it's already said it once.
-      const output = await engine(samples, { language: LANGUAGE, task: 'transcribe', no_repeat_ngram_size: 3 });
+      // transformers.js's ASR pipeline defaults to chunk_length_s: 0 (no chunking), which
+      // its own console warning flags as wrong for any audio over Whisper's 30s window
+      // ("Attempting to extract features for audio longer than 30 seconds..."). Fixed here
+      // by chunking into 30s windows with 5s of overlap so long recordings get transcribed
+      // window-by-window instead of in one pass the pipeline itself says is unsupported.
+      // Confirmed via Playwright + real audio that this silences the warning; a separate
+      // real-device recording still produced garbled output even after this fix (verified
+      // the decoded PCM feeding the model was correct real speech, not a decode bug), so
+      // this addresses a real defect but is not a complete fix for hallucination quality.
+      // no_repeat_ngram_size stays as a cheap backstop against repetition within a window.
+      const output = await engine(samples, {
+        language: LANGUAGE,
+        task: 'transcribe',
+        no_repeat_ngram_size: 3,
+        chunk_length_s: 30,
+        stride_length_s: 5
+      });
       postMessage({ type: 'transcript', payload: output.text.trim() });
     } catch (err) {
       postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
