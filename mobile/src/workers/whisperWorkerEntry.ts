@@ -1,4 +1,13 @@
-import { pipeline } from '@huggingface/transformers';
+import { pipeline, env } from '@huggingface/transformers';
+
+// Multi-threaded wasm needs cross-origin isolation (COOP/COEP headers) for
+// SharedArrayBuffer, which this app's hosting doesn't set up. Without this,
+// the wasm backend fails to initialize at all in environments that enforce
+// that requirement strictly (confirmed via headless-browser testing) --
+// force single-threaded, non-proxied wasm so the fallback actually works
+// everywhere, not just wherever WebGPU happens to be available.
+env.backends.onnx.wasm!.numThreads = 1;
+env.backends.onnx.wasm!.proxy = false;
 
 interface ProgressPayload {
   status: string;

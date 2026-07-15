@@ -367,7 +367,15 @@ Expected: completes with no errors, `@huggingface/transformers` now resolvable d
 
 Create `mobile/src/workers/whisperWorkerEntry.ts` (deliberately under `src/`, not `scripts/` — this file has zero Metro exposure regardless of location since nothing in the app imports it, but keeping it under `src/` means `mobile/tsconfig.json`'s `include` glob covers it and `pnpm run typecheck` genuinely checks it, catching typos in this file's contact with `@huggingface/transformers`'s API surface that `as unknown as Transcriber` casts would otherwise hide until a real browser run):
 ```ts
-import { pipeline } from '@huggingface/transformers';
+import { pipeline, env } from '@huggingface/transformers';
+
+// Multi-threaded wasm needs cross-origin isolation (COOP/COEP headers) for
+// SharedArrayBuffer, which this app's hosting doesn't set up. Force
+// single-threaded, non-proxied wasm so the fallback works regardless of
+// COOP/COEP, matching what the pre-implementation esbuild-worker spike had
+// to configure to get the wasm backend running at all.
+env.backends.onnx.wasm!.numThreads = 1;
+env.backends.onnx.wasm!.proxy = false;
 
 interface ProgressPayload {
   status: string;
@@ -1224,6 +1232,8 @@ Run from `mobile/`: `pnpm run build:web`, then check `mobile/dist/sw.js`'s injec
 - [ ] **Step 2: Local dev smoke test**
 
 Run from `mobile/`: `pnpm start`, press `w` for web. Open the new mic icon in the Masthead, confirm the first-download modal appears, confirm it, hold the button, speak a few catalog item names, release, confirm the transcript gets parsed and toggled into the list with a toast — same as the dictation flow.
+
+**Automated smoke test performed during this task** (Playwright, headed Chromium, `--use-file-for-fake-audio-capture` feeding two real pre-recorded voice samples as the fake mic input): confirmed the full pipeline end to end — model preload, real recording capture, `decodeAudioTo16kMono`, Whisper transcription (wasm backend, real GPU unavailable in the test environment so webgpu correctly fell back), `parseVoiceCommand` matching, toast display, and the sheet closing itself afterward (validating the Task 11 close-the-right-sheet fix). One sample produced no catalog matches (`"Nenhum item reconhecido, tenta de novo"`), which is a legitimate outcome given the sample's actual spoken content, not a bug — no crash, no stuck state, no hang. Separately, headless Chromium (no window) failed to acquire a WebGPU adapter and then failed the wasm fallback too with an ONNX Runtime "no available backend found" error; the identical flow succeeded immediately in headed mode, so this looks like a Chromium-headless-specific sandboxing limitation rather than a real defect — flagged here rather than silently dismissed, since it wasn't fully root-caused.
 
 - [ ] **Step 3: Deploy a preview build**
 
