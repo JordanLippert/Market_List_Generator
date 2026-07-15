@@ -87,7 +87,12 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
       await clientRef.current!.preload();
       if (sessionRef.current !== session) return;
       setStatus('recording');
-      await recorderRef.current!.start((lvl) => setLevel(lvl));
+      // Fresh instance every attempt: AudioRecorder doesn't clear its internal
+      // MediaRecorder reference after stop()/cancel(), so reusing the same
+      // instance after a failed attempt makes every later start() throw
+      // "already recording" forever. Cheap to just not reuse it.
+      recorderRef.current = new AudioRecorder();
+      await recorderRef.current.start((lvl) => setLevel(lvl));
     } catch (err) {
       if (sessionRef.current !== session) return;
       setStatus('idle');

@@ -705,6 +705,8 @@ Orchestrates `AudioRecorder` (deep-imported), `computeWaveform` (deep-imported),
 
 Uses a monotonic `sessionRef` counter (not a boolean flag) to guard every async continuation (`handleStart`'s two `await`s, `handleStop`'s chain) — incremented on unmount, on a stop-during-load, and on the sheet's own `onClose`, and checked after every `await` before touching state or calling `recorder.start()`. An earlier boolean-ref version of this (`stopRequestedDuringLoadRef`, mirroring the shape of a guard the underlying library's own `useVoiceCommand` hook already has) shipped with two real bugs caught in review: (1) closing the sheet mid-load never cleared the flag, so a stale `handleStart` continuation could open the mic with no sheet visible; (2) a fast release-then-re-press reset the flag before the first attempt's `preload()` had resolved, orphaning it and letting its late `progress`/`model-ready` messages desync the visible status after a second attempt had already moved on. The session counter fixes both: any cancellation path just bumps the counter, and every suspended continuation compares against the id it captured at the start, so a superseded attempt can never affect state again. (One narrower residual: `WhisperWorkerClient`'s own `onStatusChange` callback isn't session-scoped, so on a very fast double-press during the very first, uncached model download, the status *label* could flicker back to "preparando..." from an abandoned load's late progress message even though the recorder/mic state itself stays correct — cosmetic only, accepted as a known limitation rather than adding request-id tagging through the worker protocol for a first-use-only edge case.)
 
+A separate, real-device-caught bug: `AudioRecorder.stop()`/`cancel()` (in the vendored submodule) never clear their internal `mediaRecorder` field — only `releaseStream()`'s effects (stopping tracks) run. This means after any failed recording attempt (e.g. a too-short recording whose blob fails to decode), the *same* `AudioRecorder` instance's `mediaRecorder.state` reference sticks around, and every later `start()` call throws `"AudioRecorder.start() called while already recording"` forever — the feature becomes permanently unusable after one failure, with no way to recover short of reloading the page. This is a genuine defect in the vendored library, not something worth patching in the submodule checkout directly (that's a separate repo, changes there don't persist across `git submodule update`) — worked around entirely within this file instead: `handleStart` allocates a **fresh `AudioRecorder` instance every attempt**, right before calling `.start()`, so a previous attempt's stuck internal state can never gate a new one. Worth reporting upstream to `hearsay-pwa` (nulling `this.mediaRecorder = null` at the end of `stop()`/`cancel()` would fix it at the source), but out of scope for this branch.
+
 - [ ] **Step 1: Replace the stub with the full component**
 
 Replace the entire contents of `mobile/src/ui/components/VoiceRecordSheet/index.tsx`:
@@ -798,7 +800,12 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
       await clientRef.current!.preload();
       if (sessionRef.current !== session) return;
       setStatus('recording');
-      await recorderRef.current!.start((lvl) => setLevel(lvl));
+      // Fresh instance every attempt: AudioRecorder doesn't clear its internal
+      // MediaRecorder reference after stop()/cancel(), so reusing the same
+      // instance after a failed attempt makes every later start() throw
+      // "already recording" forever. Cheap to just not reuse it.
+      recorderRef.current = new AudioRecorder();
+      await recorderRef.current.start((lvl) => setLevel(lvl));
     } catch (err) {
       if (sessionRef.current !== session) return;
       setStatus('idle');
@@ -1016,17 +1023,17 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoi
 
 - [ ] **Step 2: Add the new icon button**
 
-Immediately after the existing "Adicionar por voz" `Pressable` (the one with `<Feather name="mic" ... />`), add:
+Immediately after the existing "Adicionar por voz" `Pressable` (the one with `<Feather name="mic" ... />`), add — note `style={styles.iconBtn}`, reusing the exact same style as the sibling icon buttons rather than a bespoke one, so it matches their sharp (non-rounded) corners and padding-driven sizing instead of looking visually different:
 ```tsx
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Gravar comando de voz"
+            accessibilityLabel="Gravar por voz"
             hitSlop={12}
             onPress={() => {
               haptics.light();
               onOpenVoiceRecord();
             }}
-            style={styles.waveIconBtn}
+            style={styles.iconBtn}
           >
             <View style={styles.waveIconRow}>
               {[3, 7, 5, 3].map((h, idx) => (
@@ -1035,20 +1042,12 @@ Immediately after the existing "Adicionar por voz" `Pressable` (the one with `<F
             </View>
           </Pressable>
 ```
+(An earlier version of this step used a bespoke `waveIconBtn` style with `borderRadius: 4` and a fixed 30×30 box — caught in real-device testing as visually inconsistent with its siblings, which are sharp-cornered and sized by padding, not a fixed box. Reusing `iconBtn` directly fixes that.)
 
 - [ ] **Step 3: Add the new styles**
 
 In the `StyleSheet.create` call at the bottom of the file, add after `iconBtn`:
 ```ts
-  waveIconBtn: {
-    width: 30,
-    height: 30,
-    borderWidth: 1.5,
-    borderColor: theme.colors.ink,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
   waveIconRow: { flexDirection: 'row', alignItems: 'center', gap: 1.5 },
   waveIconBar: { width: 2, borderRadius: 1, backgroundColor: theme.colors.ink }
 ```
