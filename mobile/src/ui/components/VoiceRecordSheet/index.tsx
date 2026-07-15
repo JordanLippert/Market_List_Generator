@@ -126,6 +126,7 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
       if (sessionRef.current !== session) return;
       setWaveform(waveformResult);
       const text = await clientRef.current!.transcribe(samples);
+      console.log('[VoiceRecordSheet] transcript:', text);
       if (sessionRef.current !== session) return;
       setStatus('idle');
       onSubmit(text);

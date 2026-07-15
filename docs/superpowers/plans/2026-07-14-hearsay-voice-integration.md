@@ -715,6 +715,8 @@ Uses a monotonic `sessionRef` counter (not a boolean flag) to guard every async 
 
 A separate, real-device-caught bug: `AudioRecorder.stop()`/`cancel()` (in the vendored submodule) never clear their internal `mediaRecorder` field — only `releaseStream()`'s effects (stopping tracks) run. This means after any failed recording attempt (e.g. a too-short recording whose blob fails to decode), the *same* `AudioRecorder` instance's `mediaRecorder.state` reference sticks around, and every later `start()` call throws `"AudioRecorder.start() called while already recording"` forever — the feature becomes permanently unusable after one failure, with no way to recover short of reloading the page. This is a genuine defect in the vendored library, not something worth patching in the submodule checkout directly (that's a separate repo, changes there don't persist across `git submodule update`) — worked around entirely within this file instead: `handleStart` allocates a **fresh `AudioRecorder` instance every attempt**, right before calling `.start()`, so a previous attempt's stuck internal state can never gate a new one. Worth reporting upstream to `hearsay-pwa` (nulling `this.mediaRecorder = null` at the end of `stop()`/`cancel()` would fix it at the source), but out of scope for this branch.
 
+`handleStop`'s success path also logs the raw transcript (`console.log('[VoiceRecordSheet] transcript:', text)`) before handing it to `parseVoiceCommand`. Added during real-device verification to tell apart a matcher bug from a Whisper transcription-accuracy miss (confirmed via this log that `whisper-tiny` occasionally mishears a word — e.g. "chia" as "ixia" — while `parseVoiceCommand` correctly matches whatever text it actually receives; not a code bug). Kept permanently, not just for that one investigation — console-only, nothing user-visible, and it's the fastest way to diagnose a future "didn't recognize my item" report without re-instrumenting.
+
 - [ ] **Step 1: Replace the stub with the full component**
 
 Replace the entire contents of `mobile/src/ui/components/VoiceRecordSheet/index.tsx`:
@@ -847,6 +849,7 @@ export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(f
       if (sessionRef.current !== session) return;
       setWaveform(waveformResult);
       const text = await clientRef.current!.transcribe(samples);
+      console.log('[VoiceRecordSheet] transcript:', text);
       if (sessionRef.current !== session) return;
       setStatus('idle');
       onSubmit(text);
