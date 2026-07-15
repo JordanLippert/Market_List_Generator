@@ -1210,6 +1210,14 @@ git commit -m "feat(mobile): wire VoiceRecordSheet into HomeScreen"
 
 No new automated tests are added beyond what already exists — this feature is UI wiring plus a Worker-isolated build step on top of an already-tested matcher (`parseVoiceCommand`) and an external library. Verify on a real device:
 
+**Bug found and fixed during this task's dev smoke test:** the wave-icon button crashed on click (`Uncaught TypeError: Cannot read properties of null (reading 'useRef') at VoiceButton`, plus an "Invalid hook call" warning). Cause: `@hearsay-pwa/react`'s `package.json` declares `react`/`react-dom` as its own devDependencies (for its own test suite); under pnpm's strict `node_modules` isolation this installs a second copy of React (18.3.1) alongside the app's real one (19.1.0), and `VoiceButton` — deep-imported straight from that package's source — was calling hooks against the wrong React instance. Fixed by adding to `mobile/pnpm-workspace.yaml`:
+```yaml
+overrides:
+  react: 19.1.0
+  react-dom: 19.1.0
+```
+then `pnpm install` — this forces every workspace member (including the vendored submodule) onto the single real app version; confirmed via `vendor/hearsay-pwa/packages/react/node_modules/react` now symlinking to the same `react@19.1.0` store entry the app itself uses, and `pnpm run typecheck`/`build:web` both still pass.
+
 - [ ] **Step 1: Confirm the whisper-worker asset isn't precached**
 
 Run from `mobile/`: `pnpm run build:web`, then check `mobile/dist/sw.js`'s injected `self.__PRECACHE_ASSETS__` list (search for `workers/whisper-worker.js`). Expected: **not present** — this file must only ever be fetched on demand, never eagerly downloaded at PWA install time. If it is present, something in `mobile/scripts/postbuild-sw.mjs`'s asset-scanning changed unexpectedly and needs to be fixed before merging (`postbuild-sw.mjs` wasn't touched by this plan — this check just confirms that stayed true).
