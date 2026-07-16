@@ -40,15 +40,20 @@ type Transcriber = (
 const MODEL = 'onnx-community/whisper-base';
 const LANGUAGE = 'portuguese';
 
-// Uniform dtype: 'q8' on the webgpu device is a known-broken combination in
-// the installed transformers.js v3 (huggingface/transformers.js#1317) --
-// produces gibberish output regardless of audio quality, and is also just
-// slow (q8 decoder on webgpu benchmarks ~3x slower than fp32 encoder + q4
-// decoder in that same issue thread). Whisper's encoder is documented as
-// especially quantization-sensitive, so give it the same fp32/q4 split the
-// transformers.js dtype guide recommends. wasm keeps plain 'q8' -- that
-// combination isn't affected by the webgpu bug and the smaller download
-// matters more there (wasm is the fallback for devices without webgpu).
+// 'q8'/int8 on the webgpu device is a known-broken combination in the
+// installed transformers.js v3 (huggingface/transformers.js#1317) -- produces
+// gibberish regardless of audio quality. Confirmed via the issue thread that
+// this isn't decoder-specific ("any q8 model... other quants work without
+// issue") -- it's any int8-quantized weight on webgpu, encoder included.
+//
+// Tried fp16 for both parts to cut the download (~141MB vs ~206MB, and in
+// theory more numerically precise than q4) -- real end-to-end testing showed
+// it's actually *worse*: consistently garbled short output ("AUS" instead of
+// "arroz e chia") across repeated real-audio runs, despite being faster and
+// smaller. Reverted to fp32 encoder + q4 decoder, which real testing (same
+// harness, same audio) confirmed correct output twice in a row. Not chasing
+// a smaller download further without understanding *why* fp16 broke this
+// model's output -- theoretical bit-width reasoning already proved wrong once.
 const DTYPE_WEBGPU = { encoder_model: 'fp32', decoder_model_merged: 'q4' } as const;
 const DTYPE_WASM = 'q8';
 
