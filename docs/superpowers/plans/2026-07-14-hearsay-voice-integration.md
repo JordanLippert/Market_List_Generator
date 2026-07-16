@@ -409,17 +409,19 @@ type Transcriber = (
 const MODEL = 'onnx-community/whisper-base';
 const LANGUAGE = 'portuguese';
 
-// Uniform dtype: 'q8' on the webgpu device is a known-broken combination in
-// the installed transformers.js v3 (huggingface/transformers.js#1317) --
-// produces gibberish output regardless of audio quality, and is also just
-// slow (q8 decoder on webgpu benchmarks ~3x slower than fp32 encoder + q4
-// decoder in that same issue thread). Whisper's encoder is documented as
-// especially quantization-sensitive, so give it the same fp32/q4 split the
-// transformers.js dtype guide recommends. wasm keeps plain 'q8' -- that
-// combination isn't affected by the webgpu bug and the smaller download
-// matters more there (wasm is the fallback for devices without webgpu).
-const DTYPE_WEBGPU = { encoder_model: 'fp32', decoder_model_merged: 'q4' } as const;
-const DTYPE_WASM = 'q8';
+// 'q8'/int8 on the webgpu device was a known-broken combination in
+// transformers.js v3 (huggingface/transformers.js#1317) -- produced gibberish
+// regardless of audio quality, root-caused (per that issue thread) to the old
+// WebGPU EP mishandling dequantize layers, not specific to the decoder. v4
+// (@huggingface/transformers ^4.2.0) replaced that EP with a native one and
+// fixed this -- confirmed with 4 straight correct real-audio transcriptions
+// after upgrading, using plain 'q8' on both backends (~73MB total download,
+// vs ~200MB for the fp32-encoder/q4-decoder workaround v3 needed). v4 also
+// re-enabled SuppressTokensLogitsProcessor (verified in node_modules --
+// it was commented out in the installed v3.8.1), which independently
+// suppresses Whisper's ~90 standard non-speech tokens on both backends and
+// was likely contributing to the multi-script garbage output seen earlier.
+const DTYPE = 'q8';
 
 let transcriber: Transcriber | null = null;
 
@@ -429,7 +431,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   try {
     transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
-      dtype: DTYPE_WEBGPU,
+      dtype: DTYPE,
       progress_callback: onProgress
     })) as unknown as Transcriber;
     console.log(`[whisper-worker] model loaded (webgpu) in ${(performance.now() - startedAt).toFixed(0)}ms`);
@@ -441,7 +443,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
-    dtype: DTYPE_WASM,
+    dtype: DTYPE,
     progress_callback: onProgress
   })) as unknown as Transcriber;
   console.log(`[whisper-worker] model loaded (wasm) in ${(performance.now() - startedAt).toFixed(0)}ms`);
@@ -493,9 +495,11 @@ self.onmessage = async (event: MessageEvent) => {
 
 **Follow-up (post-implementation, dispatched to a Fable research subagent after the maintainer rejected the earlier "noisy source audio" explanation for persistent hallucination and demanded near-instant transcription):** the subagent found `dtype: 'q8'` on the `webgpu` device is a documented broken combination in the installed transformers.js v3.8.1 ([huggingface/transformers.js#1317](https://github.com/huggingface/transformers.js/issues/1317)) — produces gibberish regardless of audio quality, fixed only in v4 (not adopted here, flagged as a bigger bet needing sign-off). It also found the installed v3.8.1 has `SuppressTokensLogitsProcessor` commented out in `node_modules/@huggingface/transformers/src/models.js`, so Whisper's ~90 standard suppressed tokens never apply on either backend — independently explains multi-script garbage output. Neither is fixable without the v4 upgrade; the mitigations actually applied here (per-module dtype, conditional threading, self-hosted wasm, silence trim) reduce the failure surface but don't eliminate the underlying v3 bugs. `build-whisper-worker.mjs` also now copies onnxruntime-web's wasm runtime files (`ort-wasm-simd-threaded*.{mjs,wasm}`, both `.jsep` webgpu and plain variants) from its resolved package dist directory into `public/workers/` alongside the worker bundle, resolved via `require.resolve('onnxruntime-web', { paths: [require.resolve('@huggingface/transformers')] })` since pnpm doesn't hoist it to the top level. `mobile/src/app/lib/trimSilence.ts` trims leading/trailing silence (20ms-frame RMS threshold, 150ms padding) before the sample array is handed to the worker — reduces hallucination surface, does not reduce latency (Whisper's encoder always processes a fixed 30s window regardless of how much real audio is in it). Repo-root `vercel.json` gained a global COOP/COEP header pair to enable cross-origin isolation.
 
-Real end-to-end confirmation (Playwright, real ~3.8s audio, two independent runs after this fix): transcript came back as coherent Portuguese ("Masa arroz e chia." / "Mas se arroz e chia." — imperfect ASR noise on filler words, but the actual grocery items are correct and intact, matched by `parseVoiceCommand` both times: "2 adicionados: Arroz, Chia"), no multi-script garbage. Transcribe-call latency was ~4.5s for 3.8s of audio — close to real-time, not the multi-minute pathological case from the q8/webgpu bug. One-time cold model load (first use only, cached after) measured ~21-26s in the test environment. Download size grew substantially as a direct consequence of the dtype fix — the unquantized `fp32` encoder (82MB) plus the `q4` merged decoder (124MB, larger than `q8`'s merged decoder despite the smaller nominal bitwidth, likely per-block quantization overhead on this model's decoder) total ~200MB versus the previous ~73MB `q8`-both estimate; `FirstDownloadModal`'s copy and both docs' size mentions were updated to `~200MB` to match. Warm (already-cached-model) second-press latency was not cleanly measured at first — the throwaway Playwright harness's close/reopen-the-sheet step had a bottom-sheet animation/visibility timing issue unrelated to the app itself. Fixed by waiting for the record button to actually become `hidden` (close animation) before reopening and recomputing its coordinates on every press instead of once. With that fixed: warm-press model lookup was 40-51ms (the in-worker cache hit, as expected) and transcribe was 1.3-2.4s for ~4.4s of audio — well under real-time for the repeated-use case that matters most.
+Real end-to-end confirmation (Playwright, real ~3.8s audio, two independent runs after this fix): transcript came back as coherent Portuguese ("Masa arroz e chia." / "Mas se arroz e chia." — imperfect ASR noise on filler words, but the actual grocery items are correct and intact, matched by `parseVoiceCommand` both times: "2 adicionados: Arroz, Chia"), no multi-script garbage. Transcribe-call latency was ~4.5s for 3.8s of audio — close to real-time, not the multi-minute pathological case from the q8/webgpu bug. One-time cold model load (first use only, cached after) measured ~21-26s in the test environment. Download size grew substantially as a direct consequence of the dtype fix — the unquantized `fp32` encoder (82MB) plus the `q4` merged decoder (124MB, larger than `q8`'s merged decoder despite the smaller nominal bitwidth, likely per-block quantization overhead on this model's decoder) totaled ~200MB versus the previous ~73MB `q8`-both estimate; `FirstDownloadModal`'s copy and both docs' size mentions were updated to `~200MB` to match at the time. Warm (already-cached-model) second-press latency was not cleanly measured at first — the throwaway Playwright harness's close/reopen-the-sheet step had a bottom-sheet animation/visibility timing issue unrelated to the app itself. Fixed by waiting for the record button to actually become `hidden` (close animation) before reopening and recomputing its coordinates on every press instead of once. With that fixed: warm-press model lookup was 40-51ms (the in-worker cache hit, as expected) and transcribe was 1.3-2.4s for ~4.4s of audio — well under real-time for the repeated-use case that matters most.
 
-Follow-up size-reduction attempt (maintainer asked whether the ~200MB download could be cut, still using Fable-informed reasoning but verified directly against the `huggingface/transformers.js#1317` issue thread rather than re-dispatching): the thread confirms the webgpu bug is int8/q8 in general, not decoder-specific ("any q8 model... other quants work without issue"), so `fp16` for both encoder and decoder was tried as a smaller (~141MB vs ~206MB) alternative to `fp32`+`q4` that also avoids the broken quant. Real testing showed this was a regression, not an improvement: consistently garbled short output ("AUS" instead of "arroz e chia") across repeated runs with the same audio that transcribed correctly under `fp32`+`q4`, despite `fp16` being faster to load and numerically closer to `fp32` than `q4` in theory. Reverted to `fp32` encoder + `q4` decoder (re-confirmed correct twice more after reverting). The reason `fp16` broke output quality on this specific model wasn't root-caused -- flagged as an open question rather than guessed at further, since the a priori "smaller bit-width should still work, fp16 > q4 numerically" reasoning had already proven wrong once. Not chasing further download-size reduction without a real diagnostic pass into why.
+Follow-up size-reduction attempt #1 (maintainer asked whether the ~200MB download could be cut, verified directly against the `huggingface/transformers.js#1317` issue thread rather than re-dispatching Fable): the thread confirms the webgpu bug is int8/q8 in general, not decoder-specific ("any q8 model... other quants work without issue"), so `fp16` for both encoder and decoder was tried as a smaller (~141MB vs ~206MB) alternative to `fp32`+`q4` that also avoids the broken quant. Real testing showed this was a regression, not an improvement: consistently garbled short output ("AUS" instead of "arroz e chia") across repeated runs with the same audio that transcribed correctly under `fp32`+`q4`, despite `fp16` being faster to load and numerically closer to `fp32` than `q4` in theory. Reverted to `fp32` encoder + `q4` decoder (re-confirmed correct twice more after reverting). The reason `fp16` broke output quality on this specific model wasn't root-caused at the time -- flagged as an open question rather than guessed at further, since the a priori "smaller bit-width should still work, fp16 > q4 numerically" reasoning had already proven wrong once.
+
+Follow-up size-reduction attempt #2 -- the transformers.js v4 upgrade (maintainer explicitly authorized this after the fp16 attempt, having been told it was the "bigger bet" fix for the underlying q8/webgpu bug per the original Fable report): bumped `@huggingface/transformers` from `^3.0.0` to `^4.2.0` (`pnpm install`, no code changes needed for the bump itself -- v4's API is backwards compatible with v3 per its own PR description). Verified directly in the installed package source that `SuppressTokensLogitsProcessor` is active in v4 (`node_modules/@huggingface/transformers/src/models/modeling_utils.js`, `processors.push(new SuppressTokensLogitsProcessor(...))`, uncommented), confirming that half of the earlier Fable diagnosis. `build-whisper-worker.mjs`'s onnxruntime-web wasm-copy step was changed from a hardcoded 4-file list to a glob over `ort-wasm-simd-threaded*.{wasm,mjs}` in the resolved dist directory, since v4's bundled onnxruntime-web version (1.26.0-dev vs the old 1.22.0-dev) ships additional `.jspi`/`.asyncify` variants the hardcoded list didn't know about -- copies 8 files now instead of 4. With v4 installed, re-tried plain `dtype: 'q8'` on both backends (back to the original, smallest, pre-fix config) and it now works correctly: 4 straight successful real-audio transcriptions across two independent Playwright runs, no garbling, same accuracy as the `fp32`+`q4` workaround. Simplified the worker back down to a single `DTYPE = 'q8'` constant for both backends. Download size is back to ~73MB (down from the ~200MB v3 workaround needed) -- `FirstDownloadModal`'s copy and both docs' size mentions were updated back to `~73MB`. This resolves both follow-up attempts: v4 fixes the root cause directly, so no workaround dtype split is needed at all.
 
 - [ ] **Step 3: Write the build script**
 
@@ -523,7 +527,7 @@ await build({
   logLevel: 'info'
 });
 ```
-This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — an ~200MB payload (whisper-base, fp32 encoder + q4 decoder on webgpu / q8 on wasm — see the model choice note in Step 2 below and its follow-up) in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
+This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — an ~73MB payload (whisper-base, `q8` on both backends — see the model choice note in Step 2 below and its follow-up) in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
 
 - [ ] **Step 4: Wire it into the build pipeline and verify**
 
@@ -714,7 +718,7 @@ export function FirstDownloadModal({ visible, onConfirm, onCancel }: FirstDownlo
         <View style={styles.card}>
           <AppText family="display" size="lg" color="ink">Primeiro uso</AppText>
           <AppText family="mono" size="xs" color="muted" style={styles.body}>
-            vamos baixar ~200mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
+            vamos baixar ~73mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
           </AppText>
           <View style={styles.actions}>
             <Button label="Agora não" variant="ghostDark" onPress={onCancel} style={styles.actionBtn} />

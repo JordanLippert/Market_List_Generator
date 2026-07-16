@@ -40,22 +40,19 @@ type Transcriber = (
 const MODEL = 'onnx-community/whisper-base';
 const LANGUAGE = 'portuguese';
 
-// 'q8'/int8 on the webgpu device is a known-broken combination in the
-// installed transformers.js v3 (huggingface/transformers.js#1317) -- produces
-// gibberish regardless of audio quality. Confirmed via the issue thread that
-// this isn't decoder-specific ("any q8 model... other quants work without
-// issue") -- it's any int8-quantized weight on webgpu, encoder included.
-//
-// Tried fp16 for both parts to cut the download (~141MB vs ~206MB, and in
-// theory more numerically precise than q4) -- real end-to-end testing showed
-// it's actually *worse*: consistently garbled short output ("AUS" instead of
-// "arroz e chia") across repeated real-audio runs, despite being faster and
-// smaller. Reverted to fp32 encoder + q4 decoder, which real testing (same
-// harness, same audio) confirmed correct output twice in a row. Not chasing
-// a smaller download further without understanding *why* fp16 broke this
-// model's output -- theoretical bit-width reasoning already proved wrong once.
-const DTYPE_WEBGPU = { encoder_model: 'fp32', decoder_model_merged: 'q4' } as const;
-const DTYPE_WASM = 'q8';
+// 'q8'/int8 on the webgpu device was a known-broken combination in
+// transformers.js v3 (huggingface/transformers.js#1317) -- produced gibberish
+// regardless of audio quality, root-caused (per that issue thread) to the old
+// WebGPU EP mishandling dequantize layers, not specific to the decoder. v4
+// (@huggingface/transformers ^4.2.0) replaced that EP with a native one and
+// fixed this -- confirmed with 4 straight correct real-audio transcriptions
+// after upgrading, using plain 'q8' on both backends (~73MB total download,
+// vs ~200MB for the fp32-encoder/q4-decoder workaround v3 needed). v4 also
+// re-enabled SuppressTokensLogitsProcessor (verified in node_modules --
+// it was commented out in the installed v3.8.1), which independently
+// suppresses Whisper's ~90 standard non-speech tokens on both backends and
+// was likely contributing to the multi-script garbage output seen earlier.
+const DTYPE = 'q8';
 
 let transcriber: Transcriber | null = null;
 
@@ -65,7 +62,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   try {
     transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
-      dtype: DTYPE_WEBGPU,
+      dtype: DTYPE,
       progress_callback: onProgress
     })) as unknown as Transcriber;
     console.log(`[whisper-worker] model loaded (webgpu) in ${(performance.now() - startedAt).toFixed(0)}ms`);
@@ -77,7 +74,7 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
-    dtype: DTYPE_WASM,
+    dtype: DTYPE,
     progress_callback: onProgress
   })) as unknown as Transcriber;
   console.log(`[whisper-worker] model loaded (wasm) in ${(performance.now() - startedAt).toFixed(0)}ms`);
