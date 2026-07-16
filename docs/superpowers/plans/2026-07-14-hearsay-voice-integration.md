@@ -1,0 +1,1338 @@
+# Hearsay-pwa Voice Recording Integration Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add a second, real-audio-recording voice input (Whisper transcription) alongside the existing OS-dictation voice feature, styled in Pracomprá's own visual language.
+
+**Architecture:** `hearsay-pwa` is vendored as a git submodule and folded into the mobile app's pnpm workspace. Metro (the bundler behind `expo export -p web`) cannot parse `onnxruntime-web`'s browser bundles — every variant contains a webpack-only dynamic-import pattern Metro's static analyzer rejects — so the app never imports `useVoiceCommand`/`TranscriptionEngine` (both packages' barrels re-export the poisoned chain alongside the safe pieces). Instead: `AudioRecorder`, `computeWaveform`, and `VoiceButton` are imported via deep paths straight into the submodule's source (bypassing both barrels), and transcription runs in a separate Worker built by esbuild (which tolerates the pattern Metro rejects) and loaded at runtime via a plain string URL Metro never statically analyzes. A new `VoiceRecordSheet` orchestrates these pieces directly with Pracomprá-styled UI. The transcribed text flows through the same `parseVoiceCommand` + toast logic the existing dictation sheet already uses.
+
+**Tech Stack:** `@hearsay-pwa/core`/`@hearsay-pwa/react` (git submodule, pnpm workspace, deep-imported), `@huggingface/transformers` (direct dependency, used only inside the Worker), esbuild (already a devDependency, used for the SW bundle), existing `Sheet`/`Button`/`AppText`/`Toast` components, `@react-native-async-storage/async-storage`.
+
+Spec: `docs/superpowers/specs/2026-07-14-hearsay-voice-integration-design.md`
+
+---
+
+### Task 1: Vendor hearsay-pwa, wire pnpm workspace, prove Metro-safe deep imports
+
+**Files:**
+- Submodule (already committed on this branch): `mobile/vendor/hearsay-pwa`, pinned `v1.1.2`
+- Modify: `mobile/pnpm-workspace.yaml`
+- Modify: `mobile/package.json`
+- Create: `mobile/src/ui/components/VoiceRecordSheet/index.tsx` (stub, replaced fully in Task 9)
+
+The submodule itself, `.gitmodules`, `mobile/pnpm-workspace.yaml`, and `mobile/package.json`'s `@hearsay-pwa/react` dependency were already added in a prior session and are sitting as uncommitted changes in this worktree (`git status` shows them modified/untracked) — **do not re-run `git submodule add`**, it's already there and correctly pinned to `v1.1.2`. Your job is to finish wiring it correctly and prove the *safe* import pattern works, then commit.
+
+Two things were tried and ruled out before this task was written, so don't repeat them:
+- Importing `useVoiceCommand` from `@hearsay-pwa/react` (even unused) crashes Metro's build — `TranscriptionEngine.ts`'s import of `@huggingface/transformers` pulls in `onnxruntime-web`, and every browser bundle it ships uses `import(/*webpackIgnore:true*/e)` (a dynamic import with a non-literal specifier), which Metro's `collectDependencies` rejects with a `SyntaxError`.
+- `config.resolver.unstable_enablePackageExports = false` in `metro.config.js` does **not** fix this — it only changes which `onnxruntime-web` file gets hit, not whether the crash happens. **If `mobile/metro.config.js` currently has this line (check `git diff mobile/metro.config.js`), revert it** — it's not needed once the poisoned import path is avoided entirely, and leaving it in is unnecessary config debt.
+
+The fix that does work: `@hearsay-pwa/core`'s `index.ts` re-exports `AudioRecorder` and `TranscriptionEngine` from the same barrel file (same for `@hearsay-pwa/react`'s `VoiceButton` and `useVoiceCommand`), and Metro resolves everything a barrel statically re-exports regardless of what's actually used. So the app must import `AudioRecorder`, `computeWaveform`, and `VoiceButton` via **deep paths directly into the submodule's source**, bypassing both barrels entirely, and must never import anything from the bare `@hearsay-pwa/core` or `@hearsay-pwa/react` package specifiers.
+
+- [ ] **Step 1: Check and revert any leftover metro.config.js change**
+
+Run: `git diff mobile/metro.config.js`
+
+If it shows `config.resolver.unstable_enablePackageExports = false;` added, remove that line so the file matches what's committed on `master` (just `getDefaultConfig` + the `watchFolders` addition for `../shared`). If the diff is empty, nothing to do here.
+
+- [ ] **Step 2: Verify the pending pnpm-workspace.yaml and package.json changes**
+
+Run: `git diff mobile/pnpm-workspace.yaml mobile/package.json`
+
+Confirm `mobile/pnpm-workspace.yaml` has:
+```yaml
+packages:
+  - "."
+  - "vendor/hearsay-pwa/packages/*"
+```
+(it may also have pre-existing `onlyBuiltDependencies`/`allowBuilds` content above this — leave that as-is, just confirm the `packages:` list is present) and `mobile/package.json`'s `"dependencies"` has **both** `"@hearsay-pwa/core": "workspace:*"` and `"@hearsay-pwa/react": "workspace:*"` added after `"@gorhom/bottom-sheet"` — pnpm's strict `node_modules` isolation only symlinks packages a `package.json` explicitly declares, so `core` needs its own direct entry even though `react` also depends on it (the deep imports in Step 4 reach into `core` directly, bypassing `react` entirely). If either is missing, add it now.
+
+- [ ] **Step 3: Install and verify workspace resolution**
+
+Run from `mobile/`:
+```bash
+pnpm install
+```
+Expected: completes with no errors. If pnpm prompts about new build scripts for transitive dependencies (e.g. `onnxruntime-node`, `protobufjs` pulled in via `@hearsay-pwa/core`'s `@huggingface/transformers` dependency), approve them the same way the existing `esbuild`/`sharp` entries in `pnpm-workspace.yaml`'s `allowBuilds` are already approved — this is pnpm's routine build-script gate, not a manual dependency decision.
+
+- [ ] **Step 4: Write the deep-import stub**
+
+Create `mobile/src/ui/components/VoiceRecordSheet/index.tsx`:
+```tsx
+import React, { forwardRef, useRef } from 'react';
+import type BottomSheet from '@gorhom/bottom-sheet';
+import { AudioRecorder } from '@hearsay-pwa/core/src/AudioRecorder';
+import { computeWaveform } from '@hearsay-pwa/core/src/Waveform';
+import { VoiceButton } from '@hearsay-pwa/react/src/VoiceButton';
+import { Sheet } from '@ui/components/Sheet';
+import { AppText } from '@ui/components/AppText';
+
+void computeWaveform;
+
+interface VoiceRecordSheetProps {
+  onSubmit(text: string): void;
+  onClose(): void;
+  onError(message: string): void;
+}
+
+export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(function VoiceRecordSheet(
+  { onClose },
+  ref
+) {
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  if (!recorderRef.current) recorderRef.current = new AudioRecorder();
+
+  return (
+    <Sheet ref={ref} snapPoints={['50%']} onClose={onClose}>
+      <AppText family="display" size="lg" color="ink">Gravar por voz</AppText>
+      <VoiceButton mode="press-release" onStart={() => {}} onStop={() => {}}>
+        <AppText family="mono" size="xs" color="ink">gravar</AppText>
+      </VoiceButton>
+    </Sheet>
+  );
+});
+```
+This deliberately never imports `@hearsay-pwa/core` or `@hearsay-pwa/react` by their bare package name (only the deep `/src/...` paths) and never references `useVoiceCommand` or `TranscriptionEngine` anywhere. `void computeWaveform;` silences nothing (this tsconfig doesn't enable `noUnusedLocals`) — it's just there so the import's presence is deliberate and visible; a later task actually calls it.
+
+- [ ] **Step 5: Prove it typechecks and bundles**
+
+Run from `mobile/`:
+```bash
+pnpm run typecheck
+pnpm run build:web
+```
+Expected: both succeed with **no** resolution or syntax errors — this is the real proof, because unlike the earlier attempt, `VoiceRecordSheet` is not yet imported anywhere else in the app, so also temporarily add `import '@ui/components/VoiceRecordSheet';` as the last line of `mobile/src/ui/App.tsx`, rerun `pnpm run build:web`, confirm it still succeeds, then **revert that temporary line** (`git diff mobile/src/ui/App.tsx` must be empty again before you commit). This mirrors exactly how the Metro crash was first caught, so it's the right way to confirm it's gone.
+
+If `build:web` fails even with the deep-import-only stub, stop — this would mean the barrel-bypass theory is wrong somewhere, and every later task in this plan depends on it being right. Do not attempt further Metro config workarounds on your own; report back with the exact error.
+
+- [ ] **Step 6: Commit**
+
+Run from the repo root of this worktree:
+```bash
+git add mobile/pnpm-workspace.yaml mobile/package.json mobile/pnpm-lock.yaml mobile/metro.config.js mobile/src/ui/components/VoiceRecordSheet/index.tsx
+git commit -m "feat(mobile): wire pnpm workspace for hearsay-pwa, prove Metro-safe deep imports"
+```
+(The submodule and `.gitmodules` are already committed from a prior session — `git status` should show nothing related to `vendor/hearsay-pwa` left to add.)
+
+---
+
+### Task 2: Web button reset for `VoiceButton`
+
+**Files:**
+- Create: `mobile/src/ui/components/VoiceRecordSheet/webButtonReset.ts`
+
+`VoiceButton` renders a raw DOM `<button>` and only accepts a `className` (no `style` prop). Without a reset, the browser's default button chrome (border, padding, background) would show around our custom-styled children.
+
+- [ ] **Step 1: Create the reset helper**
+
+Create `mobile/src/ui/components/VoiceRecordSheet/webButtonReset.ts`:
+```ts
+const STYLE_ID = 'hearsay-voice-btn-reset';
+
+export function ensureVoiceButtonReset(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = '.hearsay-voice-btn { all: unset; cursor: pointer; display: block; width: 100%; }';
+  document.head.appendChild(style);
+}
+```
+The `typeof document === 'undefined'` guard keeps this safe to import from a vitest (node) environment. `display: block; width: 100%;` after `all: unset` intentionally wins — order inside the rule matters here.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add mobile/src/ui/components/VoiceRecordSheet/webButtonReset.ts
+git commit -m "feat(mobile): add DOM button reset for the voice record button"
+```
+
+---
+
+### Task 3: First-download acknowledgement storage helper
+
+**Files:**
+- Modify: `mobile/src/app/lib/storage.ts`
+- Create: `mobile/src/app/lib/voiceModelAck.ts`
+
+- [ ] **Step 1: Add the storage key**
+
+In `mobile/src/app/lib/storage.ts`, change:
+```ts
+export const StorageKeys = {
+  current:   '@lista/current',
+  history:   '@lista/history',
+  favorites: '@lista/favorites'
+} as const;
+```
+to:
+```ts
+export const StorageKeys = {
+  current:       '@lista/current',
+  history:       '@lista/history',
+  favorites:     '@lista/favorites',
+  voiceModelAck: '@lista/voiceModelAck'
+} as const;
+```
+
+- [ ] **Step 2: Create the helper**
+
+Create `mobile/src/app/lib/voiceModelAck.ts`:
+```ts
+import { getJSON, setJSON, StorageKeys } from './storage';
+
+export async function hasAcknowledgedVoiceModelDownload(): Promise<boolean> {
+  return getJSON<boolean>(StorageKeys.voiceModelAck, false);
+}
+
+export async function acknowledgeVoiceModelDownload(): Promise<void> {
+  await setJSON(StorageKeys.voiceModelAck, true);
+}
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add mobile/src/app/lib/storage.ts mobile/src/app/lib/voiceModelAck.ts
+git commit -m "feat(mobile): add first-download acknowledgement storage for voice model"
+```
+
+---
+
+### Task 4: Waveform display component
+
+**Files:**
+- Create: `mobile/src/ui/components/VoiceRecordSheet/Waveform.tsx`
+
+A row of 18 rounded bars. While `active`, bars animate off a fixed base pattern modulated by a live `level` (0-1 amplitude), each bar phase-offset so it reads as a wave. When not active, it shows the post-recording static `waveform` data if present, otherwise the resting base pattern. This component is pure presentation — it has no dependency on `@hearsay-pwa/*` at all, it just receives numbers as props.
+
+- [ ] **Step 1: Create the component**
+
+Create `mobile/src/ui/components/VoiceRecordSheet/Waveform.tsx`:
+```tsx
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { theme } from '@ui/styles/theme';
+
+const BASE_HEIGHTS = [6, 14, 22, 30, 18, 10, 16, 26, 32, 20, 12, 8, 14, 24, 30, 22, 14, 10];
+const MIN_HEIGHT = 4;
+const MAX_HEIGHT = 32;
+
+interface WaveformProps {
+  active: boolean;
+  level: number;
+  waveform: number[] | null;
+}
+
+export function Waveform({ active, level, waveform }: WaveformProps) {
+  const [heights, setHeights] = useState<number[]>(BASE_HEIGHTS);
+  const levelRef = useRef(level);
+  levelRef.current = level;
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      setHeights(
+        waveform
+          ? waveform.map((v) => MIN_HEIGHT + Math.round(v * (MAX_HEIGHT - MIN_HEIGHT)))
+          : BASE_HEIGHTS
+      );
+      return;
+    }
+    const start = Date.now();
+    const tick = () => {
+      const t = (Date.now() - start) / 200;
+      const lvl = levelRef.current;
+      setHeights(
+        BASE_HEIGHTS.map((base, idx) => {
+          const wave = Math.abs(Math.sin(t + idx * 0.5));
+          const amplitude = MIN_HEIGHT + (base - MIN_HEIGHT) * wave * (0.3 + lvl);
+          return Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, Math.round(amplitude)));
+        })
+      );
+      frameRef.current = requestAnimationFrame(tick);
+    };
+    frameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    };
+  }, [active, waveform]);
+
+  return (
+    <View style={styles.row}>
+      {heights.map((h, idx) => (
+        <View key={idx} style={[styles.bar, { height: h }]} />
+      ))}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: MAX_HEIGHT,
+    flex: 1,
+    justifyContent: 'center'
+  },
+  bar: { width: 3.5, borderRadius: 2, backgroundColor: theme.colors.ink }
+});
+```
+
+- [ ] **Step 2: Verify it typechecks**
+
+Run from `mobile/`: `pnpm run typecheck`
+Expected: no errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add mobile/src/ui/components/VoiceRecordSheet/Waveform.tsx
+git commit -m "feat(mobile): add animated waveform display for voice recording"
+```
+
+---
+
+### Task 5: Audio decode helper (Blob → 16kHz mono samples)
+
+**Files:**
+- Create: `mobile/src/app/lib/decodeAudioTo16kMono.ts`
+
+Whisper needs 16kHz mono `Float32Array` input. `TranscriptionEngine.transcribe()` normally handles this via `@huggingface/transformers`'s `read_audio()`, but that call needs `AudioContext`, which doesn't exist inside a Worker — so this decode step has to happen on the main thread, before the samples are handed to the transcription Worker (Task 6/7).
+
+- [ ] **Step 1: Create the helper**
+
+Create `mobile/src/app/lib/decodeAudioTo16kMono.ts`:
+```ts
+const TARGET_SAMPLE_RATE = 16_000;
+
+export async function decodeAudioTo16kMono(blob: Blob): Promise<Float32Array> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioCtx = new AudioContext();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await audioCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    await audioCtx.close();
+  }
+
+  const frameCount = Math.ceil(decoded.duration * TARGET_SAMPLE_RATE);
+  const offline = new OfflineAudioContext(1, frameCount, TARGET_SAMPLE_RATE);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start(0);
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+```
+
+- [ ] **Step 2: Verify it typechecks**
+
+Run from `mobile/`: `pnpm run typecheck`
+Expected: no errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add mobile/src/app/lib/decodeAudioTo16kMono.ts
+git commit -m "feat(mobile): add main-thread audio decode helper for Whisper input"
+```
+
+---
+
+### Task 6: Whisper transcription Worker + esbuild build step
+
+**Files:**
+- Create: `mobile/src/workers/whisperWorkerEntry.ts`
+- Create: `mobile/scripts/build-whisper-worker.mjs`
+- Modify: `mobile/package.json`
+- Modify: `.gitignore` (repo root)
+
+The worker mirrors `TranscriptionEngine`'s own webgpu→wasm fallback and model choice, but accepts pre-decoded `Float32Array` samples directly (skipping `TranscriptionEngine.transcribe()`'s `Blob`/`read_audio()` path, which needs `AudioContext` and can't run in a Worker). It's built by esbuild — the same tool already used for `mobile/scripts/build-sw.mjs` — because esbuild passes `onnxruntime-web`'s `import(/*webpackIgnore:true*/e)` pattern through untouched instead of erroring on it (confirmed by a working prototype before this plan was written).
+
+- [ ] **Step 1: Add `@huggingface/transformers` as a direct dependency**
+
+In `mobile/package.json`, add to `"dependencies"` (alphabetically, after `"@gorhom/bottom-sheet"` and before `"@hearsay-pwa/react"` if present, or otherwise near the other `@`-scoped entries):
+```json
+    "@huggingface/transformers": "^3.0.0",
+```
+This matches the version range `@hearsay-pwa/core` itself depends on, so pnpm dedupes to one resolved version. Without this, esbuild would need a manual `nodePaths` workaround to find the package (it isn't hoisted to `mobile/node_modules` on its own); declaring it directly avoids that.
+
+Run from `mobile/`: `pnpm install`
+Expected: completes with no errors, `@huggingface/transformers` now resolvable directly from `mobile/node_modules`.
+
+- [ ] **Step 2: Write the worker entry**
+
+Create `mobile/src/workers/whisperWorkerEntry.ts` (deliberately under `src/`, not `scripts/` — this file has zero Metro exposure regardless of location since nothing in the app imports it, but keeping it under `src/` means `mobile/tsconfig.json`'s `include` glob covers it and `pnpm run typecheck` genuinely checks it, catching typos in this file's contact with `@huggingface/transformers`'s API surface that `as unknown as Transcriber` casts would otherwise hide until a real browser run):
+```ts
+import { pipeline, env } from '@huggingface/transformers';
+
+// Multi-threaded wasm needs cross-origin isolation (COOP/COEP headers) for
+// SharedArrayBuffer -- the Vercel deploy now sets those (see vercel.json), so
+// only force the single-threaded, non-proxied fallback when isolation isn't
+// actually available (e.g. a hosting environment without the headers, or an
+// iframe embed). Forcing this unconditionally throttled every CPU-assigned op
+// (shape ops etc.) even on the webgpu device path, not just the wasm fallback.
+if (!self.crossOriginIsolated) {
+  env.backends.onnx.wasm!.numThreads = 1;
+  env.backends.onnx.wasm!.proxy = false;
+}
+
+// Self-hosted instead of the transformers.js default (jsDelivr CDN) so the
+// wasm runtime is covered by the same-origin service worker cache -- the
+// "works offline after first use" promise in FirstDownloadModal previously
+// depended on the CDN's HTTP cache never being evicted, which isn't a real
+// guarantee. Copied into public/workers/ by build-whisper-worker.mjs.
+env.backends.onnx.wasm!.wasmPaths = '/workers/';
+
+interface ProgressPayload {
+  status: string;
+  progress?: number;
+}
+
+type Transcriber = (
+  audio: Float32Array,
+  options?: {
+    language?: string;
+    task?: string;
+    no_repeat_ngram_size?: number;
+    chunk_length_s?: number;
+    stride_length_s?: number;
+  }
+) => Promise<{ text: string }>;
+
+// whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
+// phrases garbled, not just an occasional missed word) -- whisper-base is
+// meaningfully more accurate.
+const MODEL = 'onnx-community/whisper-base';
+const LANGUAGE = 'portuguese';
+
+// 'q8'/int8 on the webgpu device was a known-broken combination in
+// transformers.js v3 (huggingface/transformers.js#1317) -- produced gibberish
+// regardless of audio quality, root-caused (per that issue thread) to the old
+// WebGPU EP mishandling dequantize layers, not specific to the decoder. v4
+// (@huggingface/transformers ^4.2.0) replaced that EP with a native one and
+// fixed this -- confirmed with 4 straight correct real-audio transcriptions
+// after upgrading, using plain 'q8' on both backends (~73MB total download,
+// vs ~200MB for the fp32-encoder/q4-decoder workaround v3 needed). v4 also
+// re-enabled SuppressTokensLogitsProcessor (verified in node_modules --
+// it was commented out in the installed v3.8.1), which independently
+// suppresses Whisper's ~90 standard non-speech tokens on both backends and
+// was likely contributing to the multi-script garbage output seen earlier.
+const DTYPE = 'q8';
+
+let transcriber: Transcriber | null = null;
+
+async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promise<Transcriber> {
+  if (transcriber) return transcriber;
+  const startedAt = performance.now();
+  try {
+    transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
+      device: 'webgpu',
+      dtype: DTYPE,
+      progress_callback: onProgress
+    })) as unknown as Transcriber;
+    console.log(`[whisper-worker] model loaded (webgpu) in ${(performance.now() - startedAt).toFixed(0)}ms`);
+    return transcriber;
+  } catch {
+    // WebGPU unavailable or unsupported — fall back to wasm, mirroring TranscriptionEngine's own fallback.
+  }
+  // No dedicated error type here (unlike TranscriptionEngine's ModelLoadError) — a wasm
+  // failure just propagates to the caller, which already wraps this in its own try/catch.
+  transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
+    device: 'wasm',
+    dtype: DTYPE,
+    progress_callback: onProgress
+  })) as unknown as Transcriber;
+  console.log(`[whisper-worker] model loaded (wasm) in ${(performance.now() - startedAt).toFixed(0)}ms`);
+  return transcriber;
+}
+
+self.onmessage = async (event: MessageEvent) => {
+  const { type } = event.data ?? {};
+
+  if (type === 'preload') {
+    try {
+      await loadTranscriber((p) => postMessage({ type: 'progress', payload: p }));
+      postMessage({ type: 'model-ready' });
+    } catch (err) {
+      postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  if (type === 'transcribe') {
+    const samples = event.data.payload as Float32Array;
+    try {
+      const engine = await loadTranscriber((p) => postMessage({ type: 'progress', payload: p }));
+      // transformers.js's ASR pipeline defaults to chunk_length_s: 0 (no chunking), which
+      // its own console warning flags as wrong for any audio over Whisper's 30s window
+      // ("Attempting to extract features for audio longer than 30 seconds..."). Fixed here
+      // by chunking into 30s windows with 5s of overlap so long recordings get transcribed
+      // window-by-window instead of in one pass the pipeline itself says is unsupported.
+      // no_repeat_ngram_size stays as a cheap backstop against repetition within a window.
+      const startedAt = performance.now();
+      const output = await engine(samples, {
+        language: LANGUAGE,
+        task: 'transcribe',
+        no_repeat_ngram_size: 3,
+        chunk_length_s: 30,
+        stride_length_s: 5
+      });
+      console.log(
+        `[whisper-worker] transcribed ${(samples.length / 16000).toFixed(1)}s of audio in ${(performance.now() - startedAt).toFixed(0)}ms`
+      );
+      postMessage({ type: 'transcript', payload: output.text.trim() });
+    } catch (err) {
+      postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
+    }
+  }
+};
+```
+`postMessage`/`self`/`MessageEvent` are typed via this project's `"lib": ["DOM", "ESNext"]` tsconfig setting. Because this file lives under `src/`, `pnpm run typecheck` does check it (run it now to confirm no errors) — Metro still never bundles it, since Metro only walks files actually reachable via import from the app's entry point, and nothing in the running app imports this file (only the esbuild script does, independently).
+
+**Follow-up (post-implementation, dispatched to a Fable research subagent after the maintainer rejected the earlier "noisy source audio" explanation for persistent hallucination and demanded near-instant transcription):** the subagent found `dtype: 'q8'` on the `webgpu` device is a documented broken combination in the installed transformers.js v3.8.1 ([huggingface/transformers.js#1317](https://github.com/huggingface/transformers.js/issues/1317)) — produces gibberish regardless of audio quality, fixed only in v4 (not adopted here, flagged as a bigger bet needing sign-off). It also found the installed v3.8.1 has `SuppressTokensLogitsProcessor` commented out in `node_modules/@huggingface/transformers/src/models.js`, so Whisper's ~90 standard suppressed tokens never apply on either backend — independently explains multi-script garbage output. Neither is fixable without the v4 upgrade; the mitigations actually applied here (per-module dtype, conditional threading, self-hosted wasm, silence trim) reduce the failure surface but don't eliminate the underlying v3 bugs. `build-whisper-worker.mjs` also now copies onnxruntime-web's wasm runtime files (`ort-wasm-simd-threaded*.{mjs,wasm}`, both `.jsep` webgpu and plain variants) from its resolved package dist directory into `public/workers/` alongside the worker bundle, resolved via `require.resolve('onnxruntime-web', { paths: [require.resolve('@huggingface/transformers')] })` since pnpm doesn't hoist it to the top level. `mobile/src/app/lib/trimSilence.ts` trims leading/trailing silence (20ms-frame RMS threshold, 150ms padding) before the sample array is handed to the worker — reduces hallucination surface, does not reduce latency (Whisper's encoder always processes a fixed 30s window regardless of how much real audio is in it). Repo-root `vercel.json` gained a global COOP/COEP header pair to enable cross-origin isolation.
+
+Real end-to-end confirmation (Playwright, real ~3.8s audio, two independent runs after this fix): transcript came back as coherent Portuguese ("Masa arroz e chia." / "Mas se arroz e chia." — imperfect ASR noise on filler words, but the actual grocery items are correct and intact, matched by `parseVoiceCommand` both times: "2 adicionados: Arroz, Chia"), no multi-script garbage. Transcribe-call latency was ~4.5s for 3.8s of audio — close to real-time, not the multi-minute pathological case from the q8/webgpu bug. One-time cold model load (first use only, cached after) measured ~21-26s in the test environment. Download size grew substantially as a direct consequence of the dtype fix — the unquantized `fp32` encoder (82MB) plus the `q4` merged decoder (124MB, larger than `q8`'s merged decoder despite the smaller nominal bitwidth, likely per-block quantization overhead on this model's decoder) totaled ~200MB versus the previous ~73MB `q8`-both estimate; `FirstDownloadModal`'s copy and both docs' size mentions were updated to `~200MB` to match at the time. Warm (already-cached-model) second-press latency was not cleanly measured at first — the throwaway Playwright harness's close/reopen-the-sheet step had a bottom-sheet animation/visibility timing issue unrelated to the app itself. Fixed by waiting for the record button to actually become `hidden` (close animation) before reopening and recomputing its coordinates on every press instead of once. With that fixed: warm-press model lookup was 40-51ms (the in-worker cache hit, as expected) and transcribe was 1.3-2.4s for ~4.4s of audio — well under real-time for the repeated-use case that matters most.
+
+Follow-up size-reduction attempt #1 (maintainer asked whether the ~200MB download could be cut, verified directly against the `huggingface/transformers.js#1317` issue thread rather than re-dispatching Fable): the thread confirms the webgpu bug is int8/q8 in general, not decoder-specific ("any q8 model... other quants work without issue"), so `fp16` for both encoder and decoder was tried as a smaller (~141MB vs ~206MB) alternative to `fp32`+`q4` that also avoids the broken quant. Real testing showed this was a regression, not an improvement: consistently garbled short output ("AUS" instead of "arroz e chia") across repeated runs with the same audio that transcribed correctly under `fp32`+`q4`, despite `fp16` being faster to load and numerically closer to `fp32` than `q4` in theory. Reverted to `fp32` encoder + `q4` decoder (re-confirmed correct twice more after reverting). The reason `fp16` broke output quality on this specific model wasn't root-caused at the time -- flagged as an open question rather than guessed at further, since the a priori "smaller bit-width should still work, fp16 > q4 numerically" reasoning had already proven wrong once.
+
+Follow-up size-reduction attempt #2 -- the transformers.js v4 upgrade (maintainer explicitly authorized this after the fp16 attempt, having been told it was the "bigger bet" fix for the underlying q8/webgpu bug per the original Fable report): bumped `@huggingface/transformers` from `^3.0.0` to `^4.2.0` (`pnpm install`, no code changes needed for the bump itself -- v4's API is backwards compatible with v3 per its own PR description). Verified directly in the installed package source that `SuppressTokensLogitsProcessor` is active in v4 (`node_modules/@huggingface/transformers/src/models/modeling_utils.js`, `processors.push(new SuppressTokensLogitsProcessor(...))`, uncommented), confirming that half of the earlier Fable diagnosis. `build-whisper-worker.mjs`'s onnxruntime-web wasm-copy step was changed from a hardcoded 4-file list to a glob over `ort-wasm-simd-threaded*.{wasm,mjs}` in the resolved dist directory, since v4's bundled onnxruntime-web version (1.26.0-dev vs the old 1.22.0-dev) ships additional `.jspi`/`.asyncify` variants the hardcoded list didn't know about -- copies 8 files now instead of 4. With v4 installed, re-tried plain `dtype: 'q8'` on both backends (back to the original, smallest, pre-fix config) and it now works correctly: 4 straight successful real-audio transcriptions across two independent Playwright runs, no garbling, same accuracy as the `fp32`+`q4` workaround. Simplified the worker back down to a single `DTYPE = 'q8'` constant for both backends. Download size is back to ~73MB (down from the ~200MB v3 workaround needed) -- `FirstDownloadModal`'s copy and both docs' size mentions were updated back to `~73MB`. This resolves both follow-up attempts: v4 fixes the root cause directly, so no workaround dtype split is needed at all.
+
+Follow-up: hand-implemented hallucination robustness knobs (maintainer asked for OpenAI-Whisper-parity robustness after a research pass -- separate from the v4 upgrade above -- confirmed transformers.js v4's ASR pipeline still has no `temperature` fallback, `compression_ratio_threshold`, `logprob_threshold`, `no_speech_threshold`, or `condition_on_previous_text` of its own; `no_repeat_ngram_size` alone only blocks exact repeated n-grams, not near-duplicate paraphrase repeats -- a real example was hit in testing: `"Adicionar 3 Massas Adicioner 3 Massos"`). Feasibility investigated directly in the installed package source before implementing anything: `temperature`/`do_sample` are real passthrough `generate()` kwargs (same mechanism as `no_repeat_ngram_size`), confirmed via `models/modeling_utils.js`'s `TemperatureLogitsWarper` construction path -- but `temperature` alone without `do_sample: true` is silently inert. `logprob_threshold`/`no_speech_threshold` were confirmed **not** implementable through the `pipeline()` call at all -- the ASR pipeline's return value is only `{ text, chunks? }`, no per-token logprobs or no-speech probability ever escape it, and `output_scores` exists as a config field but is dead code (declared, never read in the generation loop). Getting real logprobs would mean bypassing `pipeline()` entirely and hand-reimplementing its internal chunking/decode-merge logic around a raw `model.generate()` call -- judged too big a rewrite for this pass, explicitly scoped out rather than half-implemented.
+
+What was implemented in `whisperWorkerEntry.ts`: a compression-ratio check (OpenAI's own heuristic for detecting degenerate/repetitive output) computed from the transcript text via the Worker's built-in `CompressionStream('deflate')`, with temperature-escalation retry on failure (`[0.2, 0.4, 0.6, 0.8, 1.0]`, i.e. OpenAI's real fallback schedule minus its first tier, since the existing greedy/temperature-0 call already covers that). Notably switched from `'gzip'` to `'deflate'` container format -- gzip's fixed header/footer overhead swamps short Portuguese grocery-command text so badly that even the real near-duplicate hallucination above scored *under* 1.0 against OpenAI's default `2.4` threshold; deflate's much smaller fixed overhead (~6 bytes vs 20+) makes the same `2.4` threshold actually meaningful at this text length, verified by spot-checking legit vs. degenerate text locally before committing to the constant. Falls back to the last attempt's output rather than ever throwing if all retries still fail the check.
+
+Verified via Playwright with all 3 real audio samples in one continuous session (warm model for #2/#3): all passed cleanly, 1 attempt each (ratios 0.71 / 1.12 / 1.59, all well under the 2.4 threshold, confirming near-zero overhead in the common case). Sample 2's near-duplicate repeat reproduced again as expected (ratio 1.12, below threshold, so correctly *not* retried) -- this is a known, documented limitation of the compression-ratio heuristic itself (a single near-duplicate paraphrase doesn't compress enough to trip it; a genuine repetition *loop*, the actual pathology OpenAI's constant targets, does), not a bug. One earlier test run hit an unrelated ~91s stall on sample 2's "became recording" step before any transcription began; investigated (checked for orphaned browser processes from the many Playwright runs this session -- found none, only one real Chrome instance with normal multi-process children) and it did not reproduce on a clean immediate rerun, so treated as one-off environmental flakiness rather than a regression from this change. No real hallucination case was available to positively verify the retry path actually fires and recovers (the only known-bad sample was fixed at the root by the v4 upgrade) -- implemented and typechecked but that specific path remains unverified against genuine bad output; console logging (`[whisper-worker] attempt N/6 ... compression ratio=X`) was added specifically so a future real hallucination, if one occurs, will show whether the retry loop actually engages.
+
+- [ ] **Step 3: Write the build script**
+
+Create `mobile/scripts/build-whisper-worker.mjs`:
+```js
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, '..');
+const outDir = resolve(root, 'public/workers');
+
+await mkdir(outDir, { recursive: true });
+
+await build({
+  entryPoints: [resolve(root, 'src/workers/whisperWorkerEntry.ts')],
+  bundle: true,
+  minify: true,
+  format: 'iife',
+  target: 'es2020',
+  platform: 'browser',
+  outfile: resolve(outDir, 'whisper-worker.js'),
+  logLevel: 'info'
+});
+```
+This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — an ~73MB payload (whisper-base, `q8` on both backends — see the model choice note in Step 2 below and its follow-up) in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
+
+- [ ] **Step 4: Wire it into the build pipeline and verify**
+
+In `mobile/package.json`, add to `"scripts"`:
+```json
+    "build:whisper-worker": "node scripts/build-whisper-worker.mjs",
+```
+and change the `"build:web"` script from:
+```json
+    "build:web": "pnpm run gen:splash && pnpm run build:sw && expo export -p web && node scripts/postbuild-sw.mjs && node scripts/postbuild-web.mjs",
+```
+to:
+```json
+    "build:web": "pnpm run gen:splash && pnpm run build:sw && pnpm run build:whisper-worker && expo export -p web && node scripts/postbuild-sw.mjs && node scripts/postbuild-web.mjs",
+```
+It must run before `expo export -p web` so `public/workers/whisper-worker.js` exists for Expo to copy into `dist/`, same ordering `build:sw` already relies on for `public/sw.js`.
+
+Run from `mobile/`:
+```bash
+pnpm run build:whisper-worker
+```
+Expected: succeeds, produces `mobile/public/workers/whisper-worker.js` (a large minified bundle, several hundred KB — that's expected, it's the entire `@huggingface/transformers` + `onnxruntime-web` stack). This is the real proof esbuild tolerates what Metro rejects.
+
+Then run:
+```bash
+pnpm run build:web
+```
+Expected: succeeds end to end, and `mobile/dist/workers/whisper-worker.js` exists after the export step.
+
+- [ ] **Step 5: Add `mobile/public/workers/` to `.gitignore`**
+
+In the repo root `.gitignore`, add a new entry near the existing `# SW generated` / `mobile/public/sw.js` lines:
+```
+# Whisper worker bundle, generated at build time
+mobile/public/workers/
+```
+Without this, a future broad `git add -A`/`git add .` (or an IDE's auto-stage) could commit an ~875KB minified bundle with `@huggingface/transformers` + `onnxruntime-web` embedded in it.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add mobile/package.json mobile/pnpm-lock.yaml mobile/src/workers/whisperWorkerEntry.ts mobile/scripts/build-whisper-worker.mjs .gitignore
+git commit -m "feat(mobile): build Whisper transcription as a standalone esbuild Worker"
+```
+`mobile/public/workers/whisper-worker.js` and `mobile/dist/` are build output, not source — they must not be part of this commit (the `.gitignore` entry from Step 5 keeps `public/workers/` out of `git status` entirely now; `dist/` was already covered).
+
+---
+
+### Task 7: Worker-client wrapper
+
+**Files:**
+- Create: `mobile/src/app/lib/whisperWorkerClient.ts`
+
+A thin `postMessage` wrapper around the Worker built in Task 6. This file lives under `src/`, so it **is** typechecked and Metro-bundled normally — it never imports `@huggingface/transformers` or anything from `@hearsay-pwa/*`, it only talks to the Worker via messages.
+
+- [ ] **Step 1: Create the client**
+
+Create `mobile/src/app/lib/whisperWorkerClient.ts`:
+```ts
+export type WhisperWorkerStatus = 'idle' | 'loading-model' | 'transcribing';
+
+interface WhisperWorkerClientOptions {
+  onStatusChange?(status: WhisperWorkerStatus): void;
+}
+
+interface WorkerMessage {
+  type: 'progress' | 'model-ready' | 'transcript' | 'error';
+  payload?: unknown;
+}
+
+interface PendingCall<T> {
+  resolve(value: T): void;
+  reject(err: Error): void;
+}
+
+export class WhisperWorkerClient {
+  private worker: Worker | null = null;
+  private pendingPreload: PendingCall<void> | null = null;
+  private pendingTranscribe: PendingCall<string> | null = null;
+
+  constructor(private options: WhisperWorkerClientOptions = {}) {}
+
+  private ensureWorker(): Worker {
+    if (this.worker) return this.worker;
+    const worker = new Worker('/workers/whisper-worker.js');
+    worker.onmessage = (event: MessageEvent<WorkerMessage>) => this.handleMessage(event.data);
+    worker.onerror = (event: ErrorEvent) => {
+      const err = new Error(event.message || 'Falha no worker de transcrição');
+      this.rejectAll(err);
+    };
+    this.worker = worker;
+    return worker;
+  }
+
+  private rejectAll(err: Error): void {
+    this.pendingPreload?.reject(err);
+    this.pendingPreload = null;
+    this.pendingTranscribe?.reject(err);
+    this.pendingTranscribe = null;
+  }
+
+  private handleMessage(data: WorkerMessage): void {
+    if (data.type === 'progress') {
+      this.options.onStatusChange?.('loading-model');
+      return;
+    }
+    if (data.type === 'model-ready') {
+      this.pendingPreload?.resolve();
+      this.pendingPreload = null;
+      return;
+    }
+    if (data.type === 'transcript') {
+      this.pendingTranscribe?.resolve(data.payload as string);
+      this.pendingTranscribe = null;
+      return;
+    }
+    if (data.type === 'error') {
+      this.rejectAll(new Error(String(data.payload)));
+    }
+  }
+
+  preload(): Promise<void> {
+    const worker = this.ensureWorker();
+    this.options.onStatusChange?.('loading-model');
+    return new Promise((resolve, reject) => {
+      this.pendingPreload = { resolve, reject };
+      worker.postMessage({ type: 'preload' });
+    });
+  }
+
+  transcribe(samples: Float32Array): Promise<string> {
+    const worker = this.ensureWorker();
+    this.options.onStatusChange?.('transcribing');
+    return new Promise((resolve, reject) => {
+      this.pendingTranscribe = { resolve, reject };
+      worker.postMessage({ type: 'transcribe', payload: samples }, [samples.buffer]);
+    });
+  }
+
+  terminate(): void {
+    this.worker?.terminate();
+    this.worker = null;
+    this.pendingPreload = null;
+    this.pendingTranscribe = null;
+  }
+}
+```
+
+- [ ] **Step 2: Verify it typechecks**
+
+Run from `mobile/`: `pnpm run typecheck`
+Expected: no errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add mobile/src/app/lib/whisperWorkerClient.ts
+git commit -m "feat(mobile): add worker-client wrapper for Whisper transcription"
+```
+
+---
+
+### Task 8: First-download modal
+
+**Files:**
+- Create: `mobile/src/ui/components/VoiceRecordSheet/FirstDownloadModal.tsx`
+
+- [ ] **Step 1: Create the component**
+
+Create `mobile/src/ui/components/VoiceRecordSheet/FirstDownloadModal.tsx`:
+```tsx
+import React from 'react';
+import { Modal, View, StyleSheet } from 'react-native';
+import { AppText } from '@ui/components/AppText';
+import { Button } from '@ui/components/Button';
+import { theme } from '@ui/styles/theme';
+
+interface FirstDownloadModalProps {
+  visible: boolean;
+  onConfirm(): void;
+  onCancel(): void;
+}
+
+export function FirstDownloadModal({ visible, onConfirm, onCancel }: FirstDownloadModalProps) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.backdrop}>
+        <View style={styles.card}>
+          <AppText family="display" size="lg" color="ink">Primeiro uso</AppText>
+          <AppText family="mono" size="xs" color="muted" style={styles.body}>
+            vamos baixar ~73mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
+          </AppText>
+          <View style={styles.actions}>
+            <Button label="Agora não" variant="ghostDark" onPress={onCancel} style={styles.actionBtn} />
+            <Button label="Entendi" variant="go" onPress={onConfirm} style={styles.actionBtn} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(10, 10, 10, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing[5]
+  },
+  card: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: theme.colors.paper,
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
+    padding: theme.spacing[4]
+  },
+  body: { marginTop: theme.spacing[2], marginBottom: theme.spacing[4] },
+  actions: { flexDirection: 'row', gap: theme.spacing[2], justifyContent: 'flex-end' },
+  actionBtn: { minWidth: 96 }
+});
+```
+
+- [ ] **Step 2: Verify it typechecks**
+
+Run from `mobile/`: `pnpm run typecheck`
+Expected: no errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add mobile/src/ui/components/VoiceRecordSheet/FirstDownloadModal.tsx
+git commit -m "feat(mobile): add first-download explanation modal for voice model"
+```
+
+---
+
+### Task 9: `VoiceRecordSheet` full implementation
+
+**Files:**
+- Modify: `mobile/src/ui/components/VoiceRecordSheet/index.tsx` (replaces the Task 1 stub)
+
+Orchestrates `AudioRecorder` (deep-imported), `computeWaveform` (deep-imported), `decodeAudioTo16kMono`, and `WhisperWorkerClient` directly — no `useVoiceCommand`, no `TranscriptionEngine` import anywhere in this file.
+
+Uses a monotonic `sessionRef` counter (not a boolean flag) to guard every async continuation (`handleStart`'s two `await`s, `handleStop`'s chain) — incremented on unmount, on a stop-during-load, and on the sheet's own `onClose`, and checked after every `await` before touching state or calling `recorder.start()`. An earlier boolean-ref version of this (`stopRequestedDuringLoadRef`, mirroring the shape of a guard the underlying library's own `useVoiceCommand` hook already has) shipped with two real bugs caught in review: (1) closing the sheet mid-load never cleared the flag, so a stale `handleStart` continuation could open the mic with no sheet visible; (2) a fast release-then-re-press reset the flag before the first attempt's `preload()` had resolved, orphaning it and letting its late `progress`/`model-ready` messages desync the visible status after a second attempt had already moved on. The session counter fixes both: any cancellation path just bumps the counter, and every suspended continuation compares against the id it captured at the start, so a superseded attempt can never affect state again. (One narrower residual: `WhisperWorkerClient`'s own `onStatusChange` callback isn't session-scoped, so on a very fast double-press during the very first, uncached model download, the status *label* could flicker back to "preparando..." from an abandoned load's late progress message even though the recorder/mic state itself stays correct — cosmetic only, accepted as a known limitation rather than adding request-id tagging through the worker protocol for a first-use-only edge case.)
+
+A separate, real-device-caught bug: `AudioRecorder.stop()`/`cancel()` (in the vendored submodule) never clear their internal `mediaRecorder` field — only `releaseStream()`'s effects (stopping tracks) run. This means after any failed recording attempt (e.g. a too-short recording whose blob fails to decode), the *same* `AudioRecorder` instance's `mediaRecorder.state` reference sticks around, and every later `start()` call throws `"AudioRecorder.start() called while already recording"` forever — the feature becomes permanently unusable after one failure, with no way to recover short of reloading the page. This is a genuine defect in the vendored library, not something worth patching in the submodule checkout directly (that's a separate repo, changes there don't persist across `git submodule update`) — worked around entirely within this file instead: `handleStart` allocates a **fresh `AudioRecorder` instance every attempt**, right before calling `.start()`, so a previous attempt's stuck internal state can never gate a new one. Worth reporting upstream to `hearsay-pwa` (nulling `this.mediaRecorder = null` at the end of `stop()`/`cancel()` would fix it at the source), but out of scope for this branch.
+
+`handleStop`'s success path also logs the raw transcript (`console.log('[VoiceRecordSheet] transcript:', text)`) before handing it to `parseVoiceCommand`. Added during real-device verification to tell apart a matcher bug from a Whisper transcription-accuracy miss (confirmed via this log that `whisper-tiny` occasionally mishears a word — e.g. "chia" as "ixia" — while `parseVoiceCommand` correctly matches whatever text it actually receives; not a code bug). Kept permanently, not just for that one investigation — console-only, nothing user-visible, and it's the fastest way to diagnose a future "didn't recognize my item" report without re-instrumenting.
+
+Follow-up from that same log: a few real-device tries with longer, more natural phrases came back badly garbled (not just one missed word — whole invented words, nonsense phrasing), which was more than "expected small-model noise." Confirmed via the log again, then switched the worker's model to `whisper-base` with `dtype: 'q8'` forced on both backends (see Task 6, Step 2) — see that task for the reasoning and the size tradeoff.
+
+One more real-device finding via that same log, after the model switch: one recording came back as a long block of nonsense (mixed-script garbage tokens) repeating identically many times in a row. `no_repeat_ngram_size: 3` is now passed to the transcribe call (Task 6, Step 2) — confirmed via Context7 that transformers.js's ASR pipeline forwards arbitrary generation kwargs straight to the underlying `model.generate()` call, so this is a real, supported option, not a guess. It doesn't stop hallucination itself, only caps the damage by forcing the model to stop repeating text it's already generated.
+
+Follow-up investigation (Playwright, real 35-50s WhatsApp voice-note audio fed through Chromium's fake-mic-capture flags) found the real cause of the exact-repeat pattern above: transformers.js's ASR pipeline defaults to `chunk_length_s: 0` (no chunking), and its own console warning flags this as wrong for audio over Whisper's 30s window ("Attempting to extract features for audio longer than 30 seconds..."). `chunk_length_s: 30, stride_length_s: 5` is now passed alongside `no_repeat_ngram_size` (Task 6, Step 2) — confirmed via Context7 docs and via a real test run that this silences the warning. Separately, a 35s real-device test still produced garbled output even with chunking enabled; the decoded PCM feeding the model was pulled out of the page and its per-second RMS envelope inspected directly (silence → speech → pause → speech, matching real spoken content), ruling out a decode/capture bug. That remaining garbling is attributed to the source audio itself (a WhatsApp voice note — compressed opus, recorded at arm's length, likely with room noise/reverb) rather than a code defect; it's not representative of the shipped feature's actual usage (short press-and-hold voice commands spoken close to the phone mic), so it was not chased further in this pass.
+
+- [ ] **Step 1: Replace the stub with the full component**
+
+Replace the entire contents of `mobile/src/ui/components/VoiceRecordSheet/index.tsx`:
+```tsx
+import React, { forwardRef, useEffect, useRef, useState } from 'react';
+import { View, Pressable, StyleSheet } from 'react-native';
+import type BottomSheet from '@gorhom/bottom-sheet';
+import { AudioRecorder } from '@hearsay-pwa/core/src/AudioRecorder';
+import { computeWaveform } from '@hearsay-pwa/core/src/Waveform';
+import { VoiceButton } from '@hearsay-pwa/react/src/VoiceButton';
+import { Sheet } from '@ui/components/Sheet';
+import { AppText } from '@ui/components/AppText';
+import { Waveform } from './Waveform';
+import { FirstDownloadModal } from './FirstDownloadModal';
+import { ensureVoiceButtonReset } from './webButtonReset';
+import { hasAcknowledgedVoiceModelDownload, acknowledgeVoiceModelDownload } from '@app/lib/voiceModelAck';
+import { decodeAudioTo16kMono } from '@app/lib/decodeAudioTo16kMono';
+import { WhisperWorkerClient, type WhisperWorkerStatus } from '@app/lib/whisperWorkerClient';
+import { theme } from '@ui/styles/theme';
+import * as haptics from '@app/lib/haptics';
+
+ensureVoiceButtonReset();
+
+interface VoiceRecordSheetProps {
+  onSubmit(text: string): void;
+  onClose(): void;
+  onError(message: string): void;
+}
+
+type SheetStatus = 'idle' | 'loading-model' | 'recording' | 'transcribing';
+
+const STATUS_LABEL: Record<SheetStatus, string> = {
+  idle: 'segure pra gravar',
+  'loading-model': 'preparando reconhecimento de voz...',
+  recording: 'gravando — solte pra transcrever',
+  transcribing: 'transcrevendo...'
+};
+
+export const VoiceRecordSheet = forwardRef<BottomSheet, VoiceRecordSheetProps>(function VoiceRecordSheet(
+  { onSubmit, onClose, onError },
+  ref
+) {
+  const [status, setStatus] = useState<SheetStatus>('idle');
+  const [locked, setLocked] = useState(false);
+  const [level, setLevel] = useState(0);
+  const [waveform, setWaveform] = useState<number[] | null>(null);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  if (!recorderRef.current) recorderRef.current = new AudioRecorder();
+
+  const clientRef = useRef<WhisperWorkerClient | null>(null);
+  if (!clientRef.current) {
+    clientRef.current = new WhisperWorkerClient({
+      onStatusChange: (workerStatus: WhisperWorkerStatus) => {
+        if (workerStatus === 'loading-model') setStatus('loading-model');
+        if (workerStatus === 'transcribing') setStatus('transcribing');
+      }
+    });
+  }
+
+  const sessionRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      sessionRef.current += 1;
+      recorderRef.current?.cancel();
+      clientRef.current?.terminate();
+    };
+  }, []);
+
+  const handleSheetChange = (index: number) => {
+    if (index < 0) return;
+    hasAcknowledgedVoiceModelDownload().then((ack) => {
+      if (!ack) setShowDownloadModal(true);
+    });
+  };
+
+  const handleConfirmDownload = async () => {
+    await acknowledgeVoiceModelDownload();
+    setShowDownloadModal(false);
+  };
+
+  const handleStart = async () => {
+    if (status !== 'idle') return;
+    haptics.light();
+    const session = (sessionRef.current += 1);
+    setStatus('loading-model');
+    setWaveform(null);
+    try {
+      await clientRef.current!.preload();
+      if (sessionRef.current !== session) return;
+      setStatus('recording');
+      // Fresh instance every attempt: AudioRecorder doesn't clear its internal
+      // MediaRecorder reference after stop()/cancel(), so reusing the same
+      // instance after a failed attempt makes every later start() throw
+      // "already recording" forever. Cheap to just not reuse it.
+      recorderRef.current = new AudioRecorder();
+      await recorderRef.current.start((lvl) => setLevel(lvl));
+    } catch (err) {
+      if (sessionRef.current !== session) return;
+      setStatus('idle');
+      setLevel(0);
+      const message =
+        err instanceof Error && err.name === 'MicPermissionError'
+          ? 'Permita o microfone pra gravar'
+          : 'Não deu pra carregar o reconhecimento de voz, tenta o ditado';
+      console.error('[VoiceRecordSheet] start failed', err);
+      onError(message);
+    }
+  };
+
+  const handleStop = async () => {
+    setLocked(false);
+    if (status === 'loading-model') {
+      sessionRef.current += 1;
+      setStatus('idle');
+      return;
+    }
+    if (status !== 'recording') return;
+    const session = sessionRef.current;
+    setStatus('transcribing');
+    setLevel(0);
+    try {
+      const blob = await recorderRef.current!.stop();
+      const [waveformResult, samples] = await Promise.all([
+        computeWaveform(blob, 18).catch(() => null),
+        decodeAudioTo16kMono(blob)
+      ]);
+      if (sessionRef.current !== session) return;
+      setWaveform(waveformResult);
+      const text = await clientRef.current!.transcribe(samples);
+      console.log('[VoiceRecordSheet] transcript:', text);
+      if (sessionRef.current !== session) return;
+      setStatus('idle');
+      onSubmit(text);
+    } catch (err) {
+      if (sessionRef.current !== session) return;
+      console.error('[VoiceRecordSheet] stop/transcribe failed', err);
+      setStatus('idle');
+      onError('Não deu pra carregar o reconhecimento de voz, tenta o ditado');
+    }
+  };
+
+  const active = status === 'recording';
+  const micLabel =
+    status === 'loading-model' ? 'aguarde' : active ? 'gravando' : status === 'transcribing' ? 'processando' : 'gravar';
+
+  return (
+    <Sheet
+      ref={ref}
+      snapPoints={['50%']}
+      onClose={() => {
+        sessionRef.current += 1;
+        recorderRef.current?.cancel();
+        setStatus('idle');
+        setLocked(false);
+        setLevel(0);
+        onClose();
+      }}
+      onChange={handleSheetChange}
+    >
+      <AppText family="display" size="lg" color="ink">Gravar por voz</AppText>
+      <AppText family="mono" size="xs" color="muted" style={styles.subtitle}>
+        segure o botão e fale os itens naturalmente
+      </AppText>
+
+      <AppText family="mono" size="xs" color="muted" uppercase style={styles.statusLabel}>
+        {locked ? 'gravando — travado' : STATUS_LABEL[status]}
+      </AppText>
+
+      <View style={styles.panel}>
+        <View style={[styles.dot, active && styles.dotActive]} />
+        <Waveform active={active} level={level} waveform={waveform} />
+        {locked && (
+          <Pressable
+            onPress={handleStop}
+            style={styles.lockBadge}
+            accessibilityRole="button"
+            accessibilityLabel="Parar gravação travada"
+          >
+            <AppText family="mono" size="xs" uppercase style={styles.lockBadgeText}>travado ×</AppText>
+          </Pressable>
+        )}
+      </View>
+
+      <VoiceButton
+        mode="press-drag-lock"
+        className="hearsay-voice-btn"
+        onStart={handleStart}
+        onStop={handleStop}
+        onLockChange={setLocked}
+      >
+        <View style={[styles.micBtn, active && styles.micBtnActive]}>
+          <View style={styles.micIconRow}>
+            {[4, 9, 7, 4].map((h, idx) => (
+              <View key={idx} style={[styles.micIconBar, { height: h }, active && styles.micIconBarActive]} />
+            ))}
+          </View>
+          <AppText family="mono" size="xs" uppercase style={active ? styles.micLabelActive : styles.micLabel}>
+            {micLabel}
+          </AppText>
+        </View>
+      </VoiceButton>
+
+      <AppText family="mono" size="xs" color="muted" style={styles.hint}>
+        arraste para cima trava sem precisar segurar
+      </AppText>
+
+      <FirstDownloadModal
+        visible={showDownloadModal}
+        onConfirm={handleConfirmDownload}
+        onCancel={() => setShowDownloadModal(false)}
+      />
+    </Sheet>
+  );
+});
+
+const styles = StyleSheet.create({
+  subtitle: { marginTop: theme.spacing[1], marginBottom: theme.spacing[4] },
+  statusLabel: { textAlign: 'center', marginBottom: theme.spacing[3] },
+  panel: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.ink,
+    padding: theme.spacing[3],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing[2],
+    marginBottom: theme.spacing[4]
+  },
+  dot: { width: 8, height: 8, backgroundColor: theme.colors.ink },
+  dotActive: { backgroundColor: theme.colors.go },
+  lockBadge: {
+    backgroundColor: theme.colors.go,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3
+  },
+  lockBadgeText: { color: theme.colors.goInk },
+  micBtn: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.go,
+    borderRadius: 4,
+    backgroundColor: theme.colors.go,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing[2]
+  },
+  micBtnActive: { backgroundColor: theme.colors.ink, borderColor: theme.colors.ink },
+  micIconRow: { flexDirection: 'row', alignItems: 'center', gap: 2.5 },
+  micIconBar: { width: 3, borderRadius: 2, backgroundColor: theme.colors.goInk },
+  micIconBarActive: { backgroundColor: theme.colors.go },
+  micLabel: { color: theme.colors.goInk },
+  micLabelActive: { color: theme.colors.go },
+  hint: { textAlign: 'center', marginTop: theme.spacing[2] }
+});
+```
+
+- [ ] **Step 2: Verify it typechecks and bundles**
+
+Run from `mobile/`:
+```bash
+pnpm run typecheck
+pnpm run build:web
+```
+Expected: both succeed.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add mobile/src/ui/components/VoiceRecordSheet/index.tsx
+git commit -m "feat(mobile): implement VoiceRecordSheet orchestrating audio + Whisper worker"
+```
+
+---
+
+### Task 10: Masthead icon
+
+**Files:**
+- Modify: `mobile/src/ui/screens/Home/components/Masthead.tsx`
+
+Adds a second mic-family icon next to the existing dictation mic: a 30×30 square chip with a 4-bar mini-waveform glyph (same visual language as the recording panel), not a microphone icon.
+
+- [ ] **Step 1: Add the new prop**
+
+In `mobile/src/ui/screens/Home/components/Masthead.tsx`, change:
+```tsx
+interface MastheadProps {
+  totalItems: number;
+  onOpenHistory(): void;
+  onOpenFavorites(): void;
+  onOpenVoice(): void;
+}
+```
+to:
+```tsx
+interface MastheadProps {
+  totalItems: number;
+  onOpenHistory(): void;
+  onOpenFavorites(): void;
+  onOpenVoice(): void;
+  onOpenVoiceRecord(): void;
+}
+```
+and change the function signature:
+```tsx
+export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoice }: MastheadProps) {
+```
+to:
+```tsx
+export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoice, onOpenVoiceRecord }: MastheadProps) {
+```
+
+- [ ] **Step 2: Add the new icon button**
+
+Immediately after the existing "Adicionar por voz" `Pressable` (the one with `<Feather name="mic" ... />`), add — note `style={styles.iconBtn}`, reusing the exact same style as the sibling icon buttons rather than a bespoke one, so it matches their sharp (non-rounded) corners and padding-driven sizing instead of looking visually different:
+```tsx
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Gravar por voz"
+            hitSlop={12}
+            onPress={() => {
+              haptics.light();
+              onOpenVoiceRecord();
+            }}
+            style={styles.iconBtn}
+          >
+            <View style={styles.waveIconRow}>
+              {[3, 8, 13, 6, 13, 8, 3].map((h, idx) => (
+                <View key={idx} style={[styles.waveIconBar, { height: h }]} />
+              ))}
+            </View>
+          </Pressable>
+```
+(An earlier version of this step used a bespoke `waveIconBtn` style with `borderRadius: 4` and a fixed 30×30 box — caught in real-device testing as visually inconsistent with its siblings, which are sharp-cornered and sized by padding, not a fixed box. Reusing `iconBtn` directly fixes that. A second round of real-device testing then caught the bars themselves looking wrong inside the reused `iconBtn` box: `iconBtn`'s Pressable has no `alignItems`/`justifyContent` of its own — fine for a Feather icon, which has explicit intrinsic width/height and isn't affected by flexbox's default cross-axis stretch, but `waveIconRow` has neither, so it stretched to the parent's full content width and left its 4 bars clustered at the flex-start edge instead of centered. Fixed with `justifyContent: 'center'` and an explicit `height: 18` on `waveIconRow` (matching the sibling icons' `size={18}` exactly) and by dropping `borderRadius` on the 2px-ish-wide bars, which was rounding them into a blurry-looking smudge at that size rather than crisp bars. A third round asked for the wave itself to look more like a real waveform — went from 4 short bars to 7, with a taller double-peak profile, and brought a small `borderRadius` back now that the bars are wide/tall enough for it to read as a rounded cap instead of a smudge.)
+
+- [ ] **Step 3: Add the new styles**
+
+In the `StyleSheet.create` call at the bottom of the file, add after `iconBtn`:
+```ts
+  waveIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1.5, height: 18 },
+  waveIconBar: { width: 2.2, borderRadius: 1, backgroundColor: theme.colors.ink }
+```
+
+- [ ] **Step 4: Verify it typechecks**
+
+Run from `mobile/`: `pnpm run typecheck`
+Expected: fails until Task 11 updates the `Masthead` call site in `Home/index.tsx` — confirm the only error is the missing `onOpenVoiceRecord` prop at that call site, nothing else.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add mobile/src/ui/screens/Home/components/Masthead.tsx
+git commit -m "feat(mobile): add voice-record icon to Masthead"
+```
+
+---
+
+### Task 11: Wire `VoiceRecordSheet` into `HomeScreen`
+
+**Files:**
+- Modify: `mobile/src/ui/screens/Home/index.tsx`
+
+Reuses the existing `handleVoiceSubmit` (no duplicated matching logic) and the existing `Toast` for errors. `handleVoiceSubmit` needs a small signature change first — it used to hardcode `voiceRef.current?.close()`, which only ever made sense while `VoiceCommandSheet` was its only caller; passing that same function to `VoiceRecordSheet` unchanged would mean the new sheet never closes itself after a successful (or no-match) submission, since it'd keep closing the *other* sheet's ref instead. The fix parameterizes which ref to close, keeping the matching/toggle/toast logic itself shared and unduplicated (the actual thing that must not be repeated).
+
+- [ ] **Step 0: Parameterize `handleVoiceSubmit`'s sheet-close call**
+
+Add `type RefObject` to the existing React import at the top of the file — change:
+```tsx
+import React, { useMemo, useRef, useState } from 'react';
+```
+to:
+```tsx
+import React, { useMemo, useRef, useState, type RefObject } from 'react';
+```
+
+Then change `handleVoiceSubmit`'s signature and its close call:
+```tsx
+  const handleVoiceSubmit = (text: string) => {
+    const { matched } = parseVoiceCommand(text, getItems());
+    const added: string[] = [];
+
+    for (const item of matched) {
+      if (list.isSelected(item.id)) continue;
+      const variationLabel = item.variations.length > 0 ? item.variations[0].label : undefined;
+      list.toggle(item.id, variationLabel);
+      added.push(item.name);
+    }
+
+    voiceRef.current?.close();
+```
+to:
+```tsx
+  const handleVoiceSubmit = (text: string, sheetRef: RefObject<BottomSheet | null>) => {
+    const { matched } = parseVoiceCommand(text, getItems());
+    const added: string[] = [];
+
+    for (const item of matched) {
+      if (list.isSelected(item.id)) continue;
+      const variationLabel = item.variations.length > 0 ? item.variations[0].label : undefined;
+      list.toggle(item.id, variationLabel);
+      added.push(item.name);
+    }
+
+    sheetRef.current?.close();
+```
+(the rest of the function body — the toast messages — is unchanged).
+
+- [ ] **Step 1: Add the import**
+
+In `mobile/src/ui/screens/Home/index.tsx`, add after the `VoiceCommandSheet` import:
+```tsx
+import { VoiceRecordSheet } from '@ui/components/VoiceRecordSheet';
+```
+
+- [ ] **Step 2: Add the ref**
+
+Change:
+```tsx
+  const voiceRef = useRef<BottomSheet>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+```
+to:
+```tsx
+  const voiceRef = useRef<BottomSheet>(null);
+  const voiceRecordRef = useRef<BottomSheet>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+```
+
+- [ ] **Step 3: Pass the new prop to `Masthead`**
+
+Change:
+```tsx
+        <Masthead
+          totalItems={totalItems}
+          onOpenHistory={() => historyRef.current?.expand()}
+          onOpenFavorites={() => favoritesRef.current?.expand()}
+          onOpenVoice={() => voiceRef.current?.expand()}
+        />
+```
+to:
+```tsx
+        <Masthead
+          totalItems={totalItems}
+          onOpenHistory={() => historyRef.current?.expand()}
+          onOpenFavorites={() => favoritesRef.current?.expand()}
+          onOpenVoice={() => voiceRef.current?.expand()}
+          onOpenVoiceRecord={() => voiceRecordRef.current?.expand()}
+        />
+```
+
+- [ ] **Step 4: Render `VoiceRecordSheet`**
+
+Change:
+```tsx
+      <VoiceCommandSheet
+        ref={voiceRef}
+        onSubmit={handleVoiceSubmit}
+        onClose={() => voiceRef.current?.close()}
+      />
+      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
+```
+to:
+```tsx
+      <VoiceCommandSheet
+        ref={voiceRef}
+        onSubmit={(text) => handleVoiceSubmit(text, voiceRef)}
+        onClose={() => voiceRef.current?.close()}
+      />
+      <VoiceRecordSheet
+        ref={voiceRecordRef}
+        onSubmit={(text) => handleVoiceSubmit(text, voiceRecordRef)}
+        onClose={() => voiceRecordRef.current?.close()}
+        onError={(message) => setToastMessage(message)}
+      />
+      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
+```
+
+- [ ] **Step 5: Verify it typechecks, builds, and existing tests still pass**
+
+Run from `mobile/`:
+```bash
+pnpm run typecheck
+pnpm test
+pnpm run build:web
+```
+Expected: all three succeed — `pnpm test` still shows the same 12 passing `voiceCommand.test.ts` tests (untouched by this feature).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add mobile/src/ui/screens/Home/index.tsx
+git commit -m "feat(mobile): wire VoiceRecordSheet into HomeScreen"
+```
+
+---
+
+### Task 12: Manual device verification
+
+No new automated tests are added beyond what already exists — this feature is UI wiring plus a Worker-isolated build step on top of an already-tested matcher (`parseVoiceCommand`) and an external library. Verify on a real device:
+
+**Bug found and fixed during this task's dev smoke test:** the wave-icon button crashed on click (`Uncaught TypeError: Cannot read properties of null (reading 'useRef') at VoiceButton`, plus an "Invalid hook call" warning). Cause: `@hearsay-pwa/react`'s `package.json` declares `react`/`react-dom` as its own devDependencies (for its own test suite); under pnpm's strict `node_modules` isolation this installs a second copy of React (18.3.1) alongside the app's real one (19.1.0), and `VoiceButton` — deep-imported straight from that package's source — was calling hooks against the wrong React instance. Fixed by adding to `mobile/pnpm-workspace.yaml`:
+```yaml
+overrides:
+  react: 19.1.0
+  react-dom: 19.1.0
+```
+then `pnpm install` — this forces every workspace member (including the vendored submodule) onto the single real app version; confirmed via `vendor/hearsay-pwa/packages/react/node_modules/react` now symlinking to the same `react@19.1.0` store entry the app itself uses, and `pnpm run typecheck`/`build:web` both still pass.
+
+- [ ] **Step 1: Confirm the whisper-worker asset isn't precached**
+
+Run from `mobile/`: `pnpm run build:web`, then check `mobile/dist/sw.js`'s injected `self.__PRECACHE_ASSETS__` list (search for `workers/whisper-worker.js`). Expected: **not present** — this file must only ever be fetched on demand, never eagerly downloaded at PWA install time. If it is present, something in `mobile/scripts/postbuild-sw.mjs`'s asset-scanning changed unexpectedly and needs to be fixed before merging (`postbuild-sw.mjs` wasn't touched by this plan — this check just confirms that stayed true).
+
+- [ ] **Step 2: Local dev smoke test**
+
+Run from `mobile/`: `pnpm start`, press `w` for web. Open the new mic icon in the Masthead, confirm the first-download modal appears, confirm it, hold the button, speak a few catalog item names, release, confirm the transcript gets parsed and toggled into the list with a toast — same as the dictation flow.
+
+**Automated smoke test performed during this task** (Playwright, headed Chromium, `--use-file-for-fake-audio-capture` feeding two real pre-recorded voice samples as the fake mic input): confirmed the full pipeline end to end — model preload, real recording capture, `decodeAudioTo16kMono`, Whisper transcription (wasm backend, real GPU unavailable in the test environment so webgpu correctly fell back), `parseVoiceCommand` matching, toast display, and the sheet closing itself afterward (validating the Task 11 close-the-right-sheet fix). One sample produced no catalog matches (`"Nenhum item reconhecido, tenta de novo"`), which is a legitimate outcome given the sample's actual spoken content, not a bug — no crash, no stuck state, no hang. Separately, headless Chromium (no window) failed to acquire a WebGPU adapter and then failed the wasm fallback too with an ONNX Runtime "no available backend found" error; the identical flow succeeded immediately in headed mode, so this looks like a Chromium-headless-specific sandboxing limitation rather than a real defect — flagged here rather than silently dismissed, since it wasn't fully root-caused.
+
+- [ ] **Step 3: Deploy a preview build**
+
+This worktree has no `.vercel/` folder (it's gitignored, so a fresh worktree checkout doesn't carry it). Copy the project link from the main checkout, then deploy from the repo root:
+```bash
+mkdir -p .vercel
+cp ../../.vercel/project.json .vercel/project.json
+vercel
+```
+(non-`--prod`, from repo root since `vercel.json`'s `buildCommand` runs `cd mobile && ...`). Confirm the build succeeds with the git submodule present — Vercel needs to actually clone `mobile/vendor/hearsay-pwa`; if the build fails to find the submodule, enable "Automatically install Git submodules" (or equivalent) in the Vercel project's Git settings before retrying.
+
+- [ ] **Step 4: Real-device checklist**
+
+On an iOS Safari (and, if available, Android Chrome) device, added to the home screen as a PWA:
+- [ ] Mic permission prompt appears on first recording attempt; denying it shows the "permita o microfone" toast and the sheet stays open.
+- [ ] Press-and-hold shows "preparando reconhecimento..." briefly, then records with the waveform animating; releasing stops and transcribes; matched items get added with the usual toast, **and the sheet itself closes** (not just the dictation sheet — both sheets must dismiss themselves after their own submission).
+- [ ] Releasing very quickly during "preparando reconhecimento..." (before recording actually starts) does not crash or produce an empty-transcript attempt — it just cancels back to idle.
+- [ ] Press-and-drag-up locks; the "travado ×" badge appears and tapping it stops the recording.
+- [ ] First-download modal only appears once; after confirming, later recordings skip straight to the brief `loading-model` → `recording` flow.
+- [ ] After the model is cached, turn off wifi/data entirely and confirm recording + transcription still works offline, consistent with the rest of the PWA.
+- [ ] The OS-dictation mic icon still opens `VoiceCommandSheet` and works exactly as before — this feature is additive, not a replacement.
+
+- [ ] **Step 5: Report back**
+
+Once verified, report results back before merging — this is a manual gate, not something to mark done from typecheck/build output alone.

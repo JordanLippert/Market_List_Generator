@@ -1,6 +1,20 @@
+packages:
+  - "."
+  - "vendor/hearsay-pwa/packages/*"
+overrides:
+  # The vendored @hearsay-pwa/react package declares react/react-dom as its own
+  # devDependencies (for its own test suite). Under pnpm's strict isolation that
+  # installs a second copy alongside this app's react@19.1.0 -- VoiceButton, deep-
+  # imported straight from that package's source, then calls hooks against the
+  # wrong React instance ("Cannot read properties of null (reading 'useRef')").
+  # Force everything in the workspace onto the single real app version.
+  react: 19.1.0
+  react-dom: 19.1.0
 onlyBuiltDependencies:
   - esbuild
   - sharp
 allowBuilds:
   esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
   sharp: true

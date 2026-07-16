@@ -19,7 +19,8 @@ export async function remove(key: string): Promise<void> {
 }
 
 export const StorageKeys = {
-  current:   '@lista/current',
-  history:   '@lista/history',
-  favorites: '@lista/favorites'
+  current:       '@lista/current',
+  history:       '@lista/history',
+  favorites:     '@lista/favorites',
+  voiceModelAck: '@lista/voiceModelAck'
 } as const;

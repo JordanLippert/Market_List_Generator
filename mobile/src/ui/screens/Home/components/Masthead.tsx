@@ -10,6 +10,7 @@ interface MastheadProps {
   onOpenHistory(): void;
   onOpenFavorites(): void;
   onOpenVoice(): void;
+  onOpenVoiceRecord(): void;
 }
 
 function today(): { date: string; day: string } {
@@ -20,7 +21,7 @@ function today(): { date: string; day: string } {
   return { date, day: dayNames[now.getDay()] };
 }
 
-export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoice }: MastheadProps) {
+export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoice, onOpenVoiceRecord }: MastheadProps) {
   const { date, day } = today();
 
   return (
@@ -76,6 +77,22 @@ export function Masthead({ totalItems, onOpenHistory, onOpenFavorites, onOpenVoi
           >
             <Feather name="mic" size={18} color={theme.colors.ink} />
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Gravar por voz"
+            hitSlop={12}
+            onPress={() => {
+              haptics.light();
+              onOpenVoiceRecord();
+            }}
+            style={styles.iconBtn}
+          >
+            <View style={styles.waveIconRow}>
+              {[3, 8, 13, 6, 13, 8, 3].map((h, idx) => (
+                <View key={idx} style={[styles.waveIconBar, { height: h }]} />
+              ))}
+            </View>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -105,5 +122,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.ink,
     paddingHorizontal: 10,
     paddingVertical: 6
-  }
+  },
+  waveIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 1.5, height: 18 },
+  waveIconBar: { width: 2.2, borderRadius: 1, backgroundColor: theme.colors.ink }
 });
