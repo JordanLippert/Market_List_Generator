@@ -1,13 +1,22 @@
 import { pipeline, env } from '@huggingface/transformers';
 
 // Multi-threaded wasm needs cross-origin isolation (COOP/COEP headers) for
-// SharedArrayBuffer, which this app's hosting doesn't set up. Without this,
-// the wasm backend fails to initialize at all in environments that enforce
-// that requirement strictly (confirmed via headless-browser testing) --
-// force single-threaded, non-proxied wasm so the fallback actually works
-// everywhere, not just wherever WebGPU happens to be available.
-env.backends.onnx.wasm!.numThreads = 1;
-env.backends.onnx.wasm!.proxy = false;
+// SharedArrayBuffer -- the Vercel deploy now sets those (see vercel.json), so
+// only force the single-threaded, non-proxied fallback when isolation isn't
+// actually available (e.g. a hosting environment without the headers, or an
+// iframe embed). Forcing this unconditionally throttled every CPU-assigned op
+// (shape ops etc.) even on the webgpu device path, not just the wasm fallback.
+if (!self.crossOriginIsolated) {
+  env.backends.onnx.wasm!.numThreads = 1;
+  env.backends.onnx.wasm!.proxy = false;
+}
+
+// Self-hosted instead of the transformers.js default (jsDelivr CDN) so the
+// wasm runtime is covered by the same-origin service worker cache -- the
+// "works offline after first use" promise in FirstDownloadModal previously
+// depended on the CDN's HTTP cache never being evicted, which isn't a real
+// guarantee. Copied into public/workers/ by build-whisper-worker.mjs.
+env.backends.onnx.wasm!.wasmPaths = '/workers/';
 
 interface ProgressPayload {
   status: string;
@@ -27,24 +36,34 @@ type Transcriber = (
 
 // whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
 // phrases garbled, not just an occasional missed word) -- whisper-base is
-// meaningfully more accurate. dtype: 'q8' is forced explicitly on both
-// backends so the download stays the smaller quantized checkpoint regardless
-// of device -- wasm already defaulted to q8 on its own, but webgpu defaulted
-// to the much larger unquantized fp32 checkpoint unless told otherwise.
+// meaningfully more accurate.
 const MODEL = 'onnx-community/whisper-base';
-const DTYPE = 'q8';
 const LANGUAGE = 'portuguese';
+
+// Uniform dtype: 'q8' on the webgpu device is a known-broken combination in
+// the installed transformers.js v3 (huggingface/transformers.js#1317) --
+// produces gibberish output regardless of audio quality, and is also just
+// slow (q8 decoder on webgpu benchmarks ~3x slower than fp32 encoder + q4
+// decoder in that same issue thread). Whisper's encoder is documented as
+// especially quantization-sensitive, so give it the same fp32/q4 split the
+// transformers.js dtype guide recommends. wasm keeps plain 'q8' -- that
+// combination isn't affected by the webgpu bug and the smaller download
+// matters more there (wasm is the fallback for devices without webgpu).
+const DTYPE_WEBGPU = { encoder_model: 'fp32', decoder_model_merged: 'q4' } as const;
+const DTYPE_WASM = 'q8';
 
 let transcriber: Transcriber | null = null;
 
 async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promise<Transcriber> {
   if (transcriber) return transcriber;
+  const startedAt = performance.now();
   try {
     transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
-      dtype: DTYPE,
+      dtype: DTYPE_WEBGPU,
       progress_callback: onProgress
     })) as unknown as Transcriber;
+    console.log(`[whisper-worker] model loaded (webgpu) in ${(performance.now() - startedAt).toFixed(0)}ms`);
     return transcriber;
   } catch {
     // WebGPU unavailable or unsupported — fall back to wasm, mirroring TranscriptionEngine's own fallback.
@@ -53,9 +72,10 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
-    dtype: DTYPE,
+    dtype: DTYPE_WASM,
     progress_callback: onProgress
   })) as unknown as Transcriber;
+  console.log(`[whisper-worker] model loaded (wasm) in ${(performance.now() - startedAt).toFixed(0)}ms`);
   return transcriber;
 }
 
@@ -81,11 +101,8 @@ self.onmessage = async (event: MessageEvent) => {
       // ("Attempting to extract features for audio longer than 30 seconds..."). Fixed here
       // by chunking into 30s windows with 5s of overlap so long recordings get transcribed
       // window-by-window instead of in one pass the pipeline itself says is unsupported.
-      // Confirmed via Playwright + real audio that this silences the warning; a separate
-      // real-device recording still produced garbled output even after this fix (verified
-      // the decoded PCM feeding the model was correct real speech, not a decode bug), so
-      // this addresses a real defect but is not a complete fix for hallucination quality.
       // no_repeat_ngram_size stays as a cheap backstop against repetition within a window.
+      const startedAt = performance.now();
       const output = await engine(samples, {
         language: LANGUAGE,
         task: 'transcribe',
@@ -93,6 +110,9 @@ self.onmessage = async (event: MessageEvent) => {
         chunk_length_s: 30,
         stride_length_s: 5
       });
+      console.log(
+        `[whisper-worker] transcribed ${(samples.length / 16000).toFixed(1)}s of audio in ${(performance.now() - startedAt).toFixed(0)}ms`
+      );
       postMessage({ type: 'transcript', payload: output.text.trim() });
     } catch (err) {
       postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });

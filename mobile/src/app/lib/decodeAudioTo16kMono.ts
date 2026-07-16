@@ -1,4 +1,4 @@
-const TARGET_SAMPLE_RATE = 16_000;
+export const TARGET_SAMPLE_RATE = 16_000;
 
 export async function decodeAudioTo16kMono(blob: Blob): Promise<Float32Array> {
   const arrayBuffer = await blob.arrayBuffer();

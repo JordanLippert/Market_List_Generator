@@ -370,12 +370,22 @@ Create `mobile/src/workers/whisperWorkerEntry.ts` (deliberately under `src/`, no
 import { pipeline, env } from '@huggingface/transformers';
 
 // Multi-threaded wasm needs cross-origin isolation (COOP/COEP headers) for
-// SharedArrayBuffer, which this app's hosting doesn't set up. Force
-// single-threaded, non-proxied wasm so the fallback works regardless of
-// COOP/COEP, matching what the pre-implementation esbuild-worker spike had
-// to configure to get the wasm backend running at all.
-env.backends.onnx.wasm!.numThreads = 1;
-env.backends.onnx.wasm!.proxy = false;
+// SharedArrayBuffer -- the Vercel deploy now sets those (see vercel.json), so
+// only force the single-threaded, non-proxied fallback when isolation isn't
+// actually available (e.g. a hosting environment without the headers, or an
+// iframe embed). Forcing this unconditionally throttled every CPU-assigned op
+// (shape ops etc.) even on the webgpu device path, not just the wasm fallback.
+if (!self.crossOriginIsolated) {
+  env.backends.onnx.wasm!.numThreads = 1;
+  env.backends.onnx.wasm!.proxy = false;
+}
+
+// Self-hosted instead of the transformers.js default (jsDelivr CDN) so the
+// wasm runtime is covered by the same-origin service worker cache -- the
+// "works offline after first use" promise in FirstDownloadModal previously
+// depended on the CDN's HTTP cache never being evicted, which isn't a real
+// guarantee. Copied into public/workers/ by build-whisper-worker.mjs.
+env.backends.onnx.wasm!.wasmPaths = '/workers/';
 
 interface ProgressPayload {
   status: string;
@@ -395,24 +405,34 @@ type Transcriber = (
 
 // whisper-tiny's Portuguese accuracy proved too poor in real testing (whole
 // phrases garbled, not just an occasional missed word) -- whisper-base is
-// meaningfully more accurate. dtype: 'q8' is forced explicitly on both
-// backends so the download stays the smaller quantized checkpoint regardless
-// of device -- wasm already defaulted to q8 on its own, but webgpu defaulted
-// to the much larger unquantized fp32 checkpoint unless told otherwise.
+// meaningfully more accurate.
 const MODEL = 'onnx-community/whisper-base';
-const DTYPE = 'q8';
 const LANGUAGE = 'portuguese';
+
+// Uniform dtype: 'q8' on the webgpu device is a known-broken combination in
+// the installed transformers.js v3 (huggingface/transformers.js#1317) --
+// produces gibberish output regardless of audio quality, and is also just
+// slow (q8 decoder on webgpu benchmarks ~3x slower than fp32 encoder + q4
+// decoder in that same issue thread). Whisper's encoder is documented as
+// especially quantization-sensitive, so give it the same fp32/q4 split the
+// transformers.js dtype guide recommends. wasm keeps plain 'q8' -- that
+// combination isn't affected by the webgpu bug and the smaller download
+// matters more there (wasm is the fallback for devices without webgpu).
+const DTYPE_WEBGPU = { encoder_model: 'fp32', decoder_model_merged: 'q4' } as const;
+const DTYPE_WASM = 'q8';
 
 let transcriber: Transcriber | null = null;
 
 async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promise<Transcriber> {
   if (transcriber) return transcriber;
+  const startedAt = performance.now();
   try {
     transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
-      dtype: DTYPE,
+      dtype: DTYPE_WEBGPU,
       progress_callback: onProgress
     })) as unknown as Transcriber;
+    console.log(`[whisper-worker] model loaded (webgpu) in ${(performance.now() - startedAt).toFixed(0)}ms`);
     return transcriber;
   } catch {
     // WebGPU unavailable or unsupported — fall back to wasm, mirroring TranscriptionEngine's own fallback.
@@ -421,9 +441,10 @@ async function loadTranscriber(onProgress: (p: ProgressPayload) => void): Promis
   // failure just propagates to the caller, which already wraps this in its own try/catch.
   transcriber = (await pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
-    dtype: DTYPE,
+    dtype: DTYPE_WASM,
     progress_callback: onProgress
   })) as unknown as Transcriber;
+  console.log(`[whisper-worker] model loaded (wasm) in ${(performance.now() - startedAt).toFixed(0)}ms`);
   return transcriber;
 }
 
@@ -449,11 +470,8 @@ self.onmessage = async (event: MessageEvent) => {
       // ("Attempting to extract features for audio longer than 30 seconds..."). Fixed here
       // by chunking into 30s windows with 5s of overlap so long recordings get transcribed
       // window-by-window instead of in one pass the pipeline itself says is unsupported.
-      // Confirmed via Playwright + real audio that this silences the warning; a separate
-      // real-device recording still produced garbled output even after this fix (verified
-      // the decoded PCM feeding the model was correct real speech, not a decode bug), so
-      // this addresses a real defect but is not a complete fix for hallucination quality.
       // no_repeat_ngram_size stays as a cheap backstop against repetition within a window.
+      const startedAt = performance.now();
       const output = await engine(samples, {
         language: LANGUAGE,
         task: 'transcribe',
@@ -461,6 +479,9 @@ self.onmessage = async (event: MessageEvent) => {
         chunk_length_s: 30,
         stride_length_s: 5
       });
+      console.log(
+        `[whisper-worker] transcribed ${(samples.length / 16000).toFixed(1)}s of audio in ${(performance.now() - startedAt).toFixed(0)}ms`
+      );
       postMessage({ type: 'transcript', payload: output.text.trim() });
     } catch (err) {
       postMessage({ type: 'error', payload: err instanceof Error ? err.message : String(err) });
@@ -469,6 +490,10 @@ self.onmessage = async (event: MessageEvent) => {
 };
 ```
 `postMessage`/`self`/`MessageEvent` are typed via this project's `"lib": ["DOM", "ESNext"]` tsconfig setting. Because this file lives under `src/`, `pnpm run typecheck` does check it (run it now to confirm no errors) — Metro still never bundles it, since Metro only walks files actually reachable via import from the app's entry point, and nothing in the running app imports this file (only the esbuild script does, independently).
+
+**Follow-up (post-implementation, dispatched to a Fable research subagent after the maintainer rejected the earlier "noisy source audio" explanation for persistent hallucination and demanded near-instant transcription):** the subagent found `dtype: 'q8'` on the `webgpu` device is a documented broken combination in the installed transformers.js v3.8.1 ([huggingface/transformers.js#1317](https://github.com/huggingface/transformers.js/issues/1317)) — produces gibberish regardless of audio quality, fixed only in v4 (not adopted here, flagged as a bigger bet needing sign-off). It also found the installed v3.8.1 has `SuppressTokensLogitsProcessor` commented out in `node_modules/@huggingface/transformers/src/models.js`, so Whisper's ~90 standard suppressed tokens never apply on either backend — independently explains multi-script garbage output. Neither is fixable without the v4 upgrade; the mitigations actually applied here (per-module dtype, conditional threading, self-hosted wasm, silence trim) reduce the failure surface but don't eliminate the underlying v3 bugs. `build-whisper-worker.mjs` also now copies onnxruntime-web's wasm runtime files (`ort-wasm-simd-threaded*.{mjs,wasm}`, both `.jsep` webgpu and plain variants) from its resolved package dist directory into `public/workers/` alongside the worker bundle, resolved via `require.resolve('onnxruntime-web', { paths: [require.resolve('@huggingface/transformers')] })` since pnpm doesn't hoist it to the top level. `mobile/src/app/lib/trimSilence.ts` trims leading/trailing silence (20ms-frame RMS threshold, 150ms padding) before the sample array is handed to the worker — reduces hallucination surface, does not reduce latency (Whisper's encoder always processes a fixed 30s window regardless of how much real audio is in it). Repo-root `vercel.json` gained a global COOP/COEP header pair to enable cross-origin isolation.
+
+Real end-to-end confirmation (Playwright, real ~3.8s audio, two independent runs after this fix): transcript came back as coherent Portuguese ("Masa arroz e chia." / "Mas se arroz e chia." — imperfect ASR noise on filler words, but the actual grocery items are correct and intact, matched by `parseVoiceCommand` both times: "2 adicionados: Arroz, Chia"), no multi-script garbage. Transcribe-call latency was ~4.5s for 3.8s of audio — close to real-time, not the multi-minute pathological case from the q8/webgpu bug. One-time cold model load (first use only, cached after) measured ~21-26s in the test environment. Download size grew substantially as a direct consequence of the dtype fix — the unquantized `fp32` encoder (82MB) plus the `q4` merged decoder (124MB, larger than `q8`'s merged decoder despite the smaller nominal bitwidth, likely per-block quantization overhead on this model's decoder) total ~200MB versus the previous ~73MB `q8`-both estimate; `FirstDownloadModal`'s copy and both docs' size mentions were updated to `~200MB` to match. Warm (already-cached-model) second-press latency was not cleanly measured — the throwaway Playwright harness's close/reopen-the-sheet step had a bottom-sheet animation/visibility timing issue unrelated to the app itself; the worker's in-memory `transcriber` cache (`if (transcriber) return transcriber`) is a straightforward correctness guarantee that later presses within the same page session skip model loading entirely, so this is not considered an open risk, just an unmeasured number.
 
 - [ ] **Step 3: Write the build script**
 
@@ -496,7 +521,7 @@ await build({
   logLevel: 'info'
 });
 ```
-This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — an ~80MB payload (whisper-base, q8 quantized — see the model choice note in Step 2 below) in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
+This deliberately does **not** copy any onnxruntime WASM binary as a static asset — `@huggingface/transformers` fetches its ONNX runtime WASM and the model weights from their default remote locations at runtime (the same behavior `TranscriptionEngine.ts` already has, unmodified), cached by the browser's own Cache Storage. Nothing from this feature gets added to the Service Worker's precache list (see Task 12) — an ~200MB payload (whisper-base, fp32 encoder + q4 decoder on webgpu / q8 on wasm — see the model choice note in Step 2 below and its follow-up) in the install-time precache would repeat the exact iOS install-budget failure this project already diagnosed and fixed earlier.
 
 - [ ] **Step 4: Wire it into the build pipeline and verify**
 
@@ -687,7 +712,7 @@ export function FirstDownloadModal({ visible, onConfirm, onCancel }: FirstDownlo
         <View style={styles.card}>
           <AppText family="display" size="lg" color="ink">Primeiro uso</AppText>
           <AppText family="mono" size="xs" color="muted" style={styles.body}>
-            vamos baixar ~80mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
+            vamos baixar ~200mb pra reconhecer sua voz. precisa de internet agora, depois funciona offline.
           </AppText>
           <View style={styles.actions}>
             <Button label="Agora não" variant="ghostDark" onPress={onCancel} style={styles.actionBtn} />
